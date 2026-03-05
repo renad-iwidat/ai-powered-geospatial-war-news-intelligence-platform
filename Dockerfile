@@ -24,6 +24,9 @@ COPY requirements.txt .
 # Install Python dependencies
 RUN pip install --no-cache-dir -r requirements.txt
 
+# Download CAMeL Tools NER model (as root before switching to appuser)
+RUN python -c "from camel_tools.ner import NERecognizer; NERecognizer.pretrained()"
+
 # Copy application code
 COPY . .
 
