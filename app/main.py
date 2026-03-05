@@ -262,7 +262,6 @@ async def news_detail(raw_news_id: int):
 # ============================================================================
 # Location Endpoints
 # ============================================================================
-
 @app.get("/places")
 async def places_list(limit: int = Query(200, ge=1, le=2000)):
     """
