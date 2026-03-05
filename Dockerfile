@@ -32,7 +32,13 @@ RUN camel_data -i ner-arabert
 COPY . .
 
 # Create non-root user
-RUN useradd -m -u 1000 appuser && chown -R appuser:appuser /app
+RUN useradd -m -u 1000 appuser
+
+# Copy CAMeL Tools data to appuser home directory
+RUN cp -r /root/.camel_tools /home/appuser/.camel_tools && \
+    chown -R appuser:appuser /home/appuser/.camel_tools && \
+    chown -R appuser:appuser /app
+
 USER appuser
 
 # Expose port
