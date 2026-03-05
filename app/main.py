@@ -1,21 +1,20 @@
-from fastapi import FastAPI, Query
-from dotenv import load_dotenv
+"""
+=============================================================================
+GeoNews AI Backend - Main Application
+=============================================================================
+تطبيق FastAPI الرئيسي للـ GeoNews AI platform.
 
-from .db import init_db, close_db, get_pool
-from .settings import NEWS_VIEW_NAME, MAX_SNAPSHOT_LIMIT
-import asyncpg
-from fastapi import HTTPException, Query
-# تحميل متغيرات البيئة من ملف .env
-load_dotenv()
+يوفر endpoints لـ:
+- الحصول على الأخبار (snapshot, list, detail)
+- معالجة الأماكن والـ metrics
+- فحص صحة التطبيق
 
-# إنشاء تطبيق FastAPI
-app = FastAPI(
-    title="GeoNews API",
-    description="Backend API for GeoNews AI platform",
-    version="1.0"
-)
-
-from fastapi import HTTPException
+البنية:
+- Startup/Shutdown: إدارة اتصالات قاعدة البيانات
+- Health Check: فحص حالة التطبيق والـ DB
+- News Endpoints: قراءة الأخبار بطرق مختلفة
+- Processing Endpoints: تشغيل معالجات الأماكن والـ metrics
+====================================================================
 
 @app.get("/health")
 async def health():
@@ -112,3 +111,204 @@ async def news_snapshot(
         raise HTTPException(status_code=500, detail=f"DB error: {str(e)}")
 
     return {"count": len(rows), "items": [dict(r) for r in rows]}
+from fastapi import Query, HTTPException
+import asyncpg
+
+@app.get("/news/list")
+async def news_list(
+    limit: int = Query(50, ge=1, le=200),
+    offset: int = Query(0, ge=0),
+    q: str | None = Query(None),
+    place: str | None = Query(None),
+    source: str = Query("auto", pattern="^(auto|raw|translation)$"),
+):
+    try:
+        pool = get_pool()
+    except RuntimeError:
+        raise HTTPException(status_code=503, detail="Database pool not initialized")
+
+    # نبني WHERE + params
+    where = []
+    params = []
+    i = 1
+
+    # فلترة source_mode
+    if source != "auto":
+        where.append(f"source_mode = ${i}")
+        params.append(source)
+        i += 1
+
+    # بحث في العنوان/المحتوى العربي
+    if q:
+        where.append(f"(title_ar ILIKE ${i} OR content_ar ILIKE ${i})")
+        params.append(f"%{q}%")
+        i += 1
+
+    # فلترة مكان: لازم يكون عنده event بنفس place_name
+    if place:
+        where.append(f"""
+        EXISTS (
+          SELECT 1 FROM news_events ne
+          WHERE ne.raw_news_id = raw_news_id
+            AND ne.place_name = ${i}
+        )
+        """)
+        params.append(place)
+        i += 1
+
+    where_sql = "WHERE " + " AND ".join(where) if where else ""
+
+    # إجمالي العدد للفرونت
+    count_sql = f"SELECT COUNT(*) FROM vw_news_ar_feed {where_sql};"
+
+    # عناصر الليست: content_preview بدل full content (للأداء)
+    list_sql = f"""
+      SELECT
+        raw_news_id,
+        url,
+        COALESCE(published_at, fetched_at) AS sort_time,
+        title_ar AS title,
+        LEFT(content_ar, 220) AS content_preview,
+        TRUE AS content_full_available,
+        'ar' AS language_code,
+        source_mode,
+        has_numbers,
+        events_count,
+        metrics_count
+      FROM vw_news_ar_feed
+      {where_sql}
+      ORDER BY COALESCE(published_at, fetched_at) DESC NULLS LAST
+      LIMIT ${i} OFFSET ${i+1};
+    """
+    params.extend([limit, offset])
+
+    try:
+        async with pool.acquire() as conn:
+            total = await conn.fetchval(count_sql, *params[:-2]) if where else await conn.fetchval("SELECT COUNT(*) FROM vw_news_ar_feed;")
+            rows = await conn.fetch(list_sql, *params)
+    except Exception as e:
+        raise HTTPException(status_code=500, detail=f"DB error: {str(e)}")
+
+    return {
+        "items": [dict(r) for r in rows],
+        "limit": limit,
+        "offset": offset,
+        "total": int(total),
+    }
+@app.get("/news/{raw_news_id}")
+async def news_detail(raw_news_id: int):
+    try:
+        pool = get_pool()
+    except RuntimeError:
+        raise HTTPException(status_code=503, detail="Database pool not initialized")
+
+    news_sql = """
+      SELECT
+        raw_news_id,
+        title_ar AS title,
+        content_ar AS content,
+        url,
+        source_mode,
+        COALESCE(published_at, fetched_at) AS published_at
+      FROM vw_news_ar_feed
+      WHERE raw_news_id = $1
+      LIMIT 1;
+    """
+
+    places_sql = """
+      SELECT DISTINCT place_name
+      FROM news_events
+      WHERE raw_news_id = $1
+      ORDER BY place_name;
+    """
+
+    metrics_sql = """
+      SELECT em.metric_type, em.value
+      FROM news_events ne
+      JOIN event_metrics em ON em.event_id = ne.id
+      WHERE ne.raw_news_id = $1
+      ORDER BY em.metric_type, em.value DESC;
+    """
+
+    async with pool.acquire() as conn:
+        item = await conn.fetchrow(news_sql, raw_news_id)
+        if not item:
+            raise HTTPException(status_code=404, detail="News not found")
+
+        places = await conn.fetch(places_sql, raw_news_id)
+        metrics = await conn.fetch(metrics_sql, raw_news_id)
+
+    return {
+        **dict(item),
+        "places": [p["place_name"] for p in places],
+        "metrics": [dict(m) for m in metrics],
+    }
+@app.get("/news/{raw_news_id}")
+async def news_detail(raw_news_id: int):
+    try:
+        pool = get_pool()
+    except RuntimeError:
+        raise HTTPException(status_code=503, detail="Database pool not initialized")
+
+    news_sql = """
+      SELECT
+        raw_news_id,
+        title_ar AS title,
+        content_ar AS content,
+        url,
+        source_mode,
+        COALESCE(published_at, fetched_at) AS published_at
+      FROM vw_news_ar_feed
+      WHERE raw_news_id = $1
+      LIMIT 1;
+    """
+
+    places_sql = """
+      SELECT DISTINCT place_name
+      FROM news_events
+      WHERE raw_news_id = $1
+      ORDER BY place_name;
+    """
+
+    metrics_sql = """
+      SELECT em.metric_type, em.value
+      FROM news_events ne
+      JOIN event_metrics em ON em.event_id = ne.id
+      WHERE ne.raw_news_id = $1
+      ORDER BY em.metric_type, em.value DESC;
+    """
+
+    async with pool.acquire() as conn:
+        item = await conn.fetchrow(news_sql, raw_news_id)
+        if not item:
+            raise HTTPException(status_code=404, detail="News not found")
+
+        places = await conn.fetch(places_sql, raw_news_id)
+        metrics = await conn.fetch(metrics_sql, raw_news_id)
+
+    return {
+        **dict(item),
+        "places": [p["place_name"] for p in places],
+        "metrics": [dict(m) for m in metrics],
+    }
+@app.post("/process/locations")
+async def run_locations_processor(batch_size: int = Body(20)):
+    try:
+        pool = get_pool()
+    except RuntimeError:
+        raise HTTPException(status_code=503, detail="Database pool not initialized")
+
+    from .services.location_processor import process_locations
+    return await process_locations(pool, batch_size=batch_size, sleep_seconds=1.0)
+
+from fastapi import Body, HTTPException
+
+@app.post("/process/metrics")
+async def run_metrics_processor(batch_size: int = Body(50)):
+    try:
+        pool = get_pool()
+    except RuntimeError:
+        raise HTTPException(status_code=503, detail="Database pool not initialized")
+
+    from .services.metrics_processor import process_metrics
+    return await process_metrics(pool, batch_size=batch_size)
