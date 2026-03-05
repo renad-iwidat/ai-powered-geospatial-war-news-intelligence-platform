@@ -7,7 +7,6 @@ const nextConfig: NextConfig = {
   /* config options here */
   output: 'standalone', // For Docker deployment
   devIndicators: {
-    appIsrStatus: false, // Disable ISR indicator
     buildActivity: false, // Disable build activity indicator
     buildActivityPosition: 'bottom-right',
   },
