@@ -25,7 +25,8 @@ COPY requirements.txt .
 RUN pip install --no-cache-dir -r requirements.txt
 
 # Download CAMeL Tools NER model (as root before switching to appuser)
-RUN python -c "from camel_tools.ner import NERecognizer; NERecognizer.pretrained()"
+# This downloads the AraBERT NER model (~500MB)
+RUN python -c "from camel_tools.ner import NERecognizer; print('Downloading CAMeL NER model...'); NERecognizer.pretrained(); print('Model downloaded successfully')"
 
 # Copy application code
 COPY . .
