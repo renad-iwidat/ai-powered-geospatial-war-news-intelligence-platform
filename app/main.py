@@ -1,20 +1,20 @@
-"""
-=============================================================================
-GeoNews AI Backend - Main Application
-=============================================================================
-تطبيق FastAPI الرئيسي للـ GeoNews AI platform.
+from fastapi import FastAPI, Query
+from dotenv import load_dotenv
+from .services.metrics_processor import process_metrics
+from .db import init_db, close_db, get_pool
+from .settings import NEWS_VIEW_NAME, MAX_SNAPSHOT_LIMIT
+import asyncpg
+from fastapi import HTTPException, Query, Body
+load_dotenv()
 
-يوفر endpoints لـ:
-- الحصول على الأخبار (snapshot, list, detail)
-- معالجة الأماكن والـ metrics
-- فحص صحة التطبيق
+# إنشاء تطبيق FastAPI
+app = FastAPI(
+    title="GeoNews API",
+    description="Backend API for GeoNews AI platform",
+    version="1.0"
+)
 
-البنية:
-- Startup/Shutdown: إدارة اتصالات قاعدة البيانات
-- Health Check: فحص حالة التطبيق والـ DB
-- News Endpoints: قراءة الأخبار بطرق مختلفة
-- Processing Endpoints: تشغيل معالجات الأماكن والـ metrics
-====================================================================
+from fastapi import HTTPException
 
 @app.get("/health")
 async def health():
@@ -243,54 +243,7 @@ async def news_detail(raw_news_id: int):
         "places": [p["place_name"] for p in places],
         "metrics": [dict(m) for m in metrics],
     }
-@app.get("/news/{raw_news_id}")
-async def news_detail(raw_news_id: int):
-    try:
-        pool = get_pool()
-    except RuntimeError:
-        raise HTTPException(status_code=503, detail="Database pool not initialized")
 
-    news_sql = """
-      SELECT
-        raw_news_id,
-        title_ar AS title,
-        content_ar AS content,
-        url,
-        source_mode,
-        COALESCE(published_at, fetched_at) AS published_at
-      FROM vw_news_ar_feed
-      WHERE raw_news_id = $1
-      LIMIT 1;
-    """
-
-    places_sql = """
-      SELECT DISTINCT place_name
-      FROM news_events
-      WHERE raw_news_id = $1
-      ORDER BY place_name;
-    """
-
-    metrics_sql = """
-      SELECT em.metric_type, em.value
-      FROM news_events ne
-      JOIN event_metrics em ON em.event_id = ne.id
-      WHERE ne.raw_news_id = $1
-      ORDER BY em.metric_type, em.value DESC;
-    """
-
-    async with pool.acquire() as conn:
-        item = await conn.fetchrow(news_sql, raw_news_id)
-        if not item:
-            raise HTTPException(status_code=404, detail="News not found")
-
-        places = await conn.fetch(places_sql, raw_news_id)
-        metrics = await conn.fetch(metrics_sql, raw_news_id)
-
-    return {
-        **dict(item),
-        "places": [p["place_name"] for p in places],
-        "metrics": [dict(m) for m in metrics],
-    }
 @app.post("/process/locations")
 async def run_locations_processor(batch_size: int = Body(20)):
     try:
