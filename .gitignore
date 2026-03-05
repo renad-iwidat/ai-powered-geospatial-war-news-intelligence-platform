@@ -1,7 +1,8 @@
 # venv
 .venv/
 venv/
-env/
+venv311/
+.venv311/
 
 # python
 __pycache__/

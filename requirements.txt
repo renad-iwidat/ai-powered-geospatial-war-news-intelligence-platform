@@ -1,0 +1,9 @@
+fastapi
+uvicorn[standard]
+psycopg[binary]
+psycopg-pool
+python-dotenv
+pydantic
+asyncpg
+httpx
+stanza
