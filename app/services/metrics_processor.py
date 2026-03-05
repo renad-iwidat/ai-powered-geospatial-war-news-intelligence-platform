@@ -1,227 +1,118 @@
 """
-=============================================================================
 Metrics Processing Service
-=============================================================================
-يقرأ الأخبار من قاعدة البيانات ويستخرج metrics منها ويخزنها.
-
-الخطوات:
-1. قراءة أخبار عربية (ترجمة أو أصل عربي)
-2. استخراج metrics باستخدام extract_war_metrics
-3. خزن metrics في جدول event_metrics مع snippet من النص
-=============================================================================
+Processes news articles to extract and store metrics in the database
 """
 
+import re
 import asyncpg
-from typing import Dict, Optional, Tuple
-from .metrics_extractor import extract_war_metrics
-
-
-# ============================================================================
-# Helper Functions
-# ============================================================================
-
-async def _get_lang_id(conn: asyncpg.Connection, code: str) -> int:
-    """
-    الحصول على ID اللغة من جدول languages.
-    
-    Args:
-        conn: اتصال قاعدة البيانات
-        code: كود اللغة (مثل 'ar', 'en')
-    
-    Returns:
-        ID اللغة
-    
-    Raises:
-        RuntimeError: إذا لم توجد اللغة
-    """
-    row = await conn.fetchrow("SELECT id FROM languages WHERE code=$1 LIMIT 1;", code)
-    if not row:
-        raise RuntimeError(f"Language code '{code}' not found in languages table.")
-    return int(row["id"])
-
-
-async def _pick_text_for_news(
-    conn: asyncpg.Connection,
-    raw_news_id: int,
-    rn_lang_code: str,
-    title_original: Optional[str],
-    content_original: Optional[str],
-    ar_lang_id: int
-) -> Tuple[str, str]:
-    """
-    اختيار النص المناسب للمعالجة.
-    
-    الأولوية:
-    1. إذا الخبر عربي أصلاً: استخدم الأصل
-    2. إذا غير عربي: جرّب ترجمة عربية
-    3. إذا ما في ترجمة: استخدم الأصل (قد يكون إنجليزي)
-    
-    Returns:
-        (text_to_use, prefer_lang)
-        prefer_lang: 'ar' إذا النص عربي، 'en' إذا الأصل غير عربي
-    """
-    # إذا الخبر عربي: خذ الأصل
-    if rn_lang_code == "ar":
-        text = (title_original or "") + "\n" + (content_original or "")
-        return text.strip(), "ar"
-
-    # غير عربي: جرّب ترجمة عربية
-    t = await conn.fetchrow(
-        """
-        SELECT title, content
-        FROM translations
-        WHERE raw_news_id=$1 AND language_id=$2
-        ORDER BY id DESC
-        LIMIT 1
-        """,
-        raw_news_id, ar_lang_id
-    )
-
-    if t and ((t["title"] or "").strip() or (t["content"] or "").strip()):
-        text = (t["title"] or "") + "\n" + (t["content"] or "")
-        return text.strip(), "ar"
-
-    # ما في ترجمة عربية: ارجع للأصل
-    text = (title_original or "") + "\n" + (content_original or "")
-    return text.strip(), "en"
-
-
-async def _get_anchor_event_id(conn: asyncpg.Connection, raw_news_id: int) -> Optional[int]:
-    """
-    الحصول على أول event_id للخبر.
-    
-    نستخدم أول event كـ anchor لخزن جميع metrics الخبر.
-    """
-    row = await conn.fetchrow(
-        "SELECT id FROM news_events WHERE raw_news_id=$1 ORDER BY id ASC LIMIT 1;",
-        raw_news_id
-    )
-    return int(row["id"]) if row else None
+from .metrics_extractor import extract_metrics
 
 
 # ============================================================================
 # Main Processing Function
 # ============================================================================
 
-async def process_metrics(pool: asyncpg.Pool, batch_size: int = 50) -> Dict:
+async def process_metrics(pool: asyncpg.Pool, batch_size: int = 20):
     """
-    معالجة metrics للأخبار.
+    Process news articles to extract metrics and store them in database
     
-    يقرأ أخبار:
-    - فيها أرقام (has_numbers = true)
-    - لها events (حتى نقدر نخزن metrics على event_id)
-    - لم تتم معالجتها سابقاً (ما في metrics لها)
-    
-    ثم يستخرج metrics ويخزنها في جدول event_metrics.
+    This function:
+    1. Fetches unprocessed news articles that contain numbers
+    2. Extracts metrics (casualties, weapons, etc.) from the content
+    3. Stores extracted metrics in the event_metrics table
     
     Args:
-        pool: connection pool لقاعدة البيانات
-        batch_size: عدد الأخبار المراد معالجتها في كل دفعة
-    
+        pool: Database connection pool
+        batch_size: Number of articles to process in one batch
+        
     Returns:
-        dict يحتوي على إحصائيات المعالجة:
-        - processed_news: عدد الأخبار المقروءة
-        - metrics_created: عدد metrics المخزنة
-        - skipped_no_text: أخبار بدون نص
-        - skipped_no_metrics: أخبار بدون metrics
+        Dictionary with processing statistics:
+        - processed_events: Number of articles processed
+        - metrics_created: Total metrics extracted and stored
     """
-    
-    # ============================================================================
-    # Step 1: Get Language ID
-    # ============================================================================
-    async with pool.acquire() as conn:
-        ar_lang_id = await _get_lang_id(conn, "ar")
 
-        # ============================================================================
-        # Step 2: Fetch News Batch
-        # ============================================================================
-        # جيب أخبار فيها أرقام ولسا ما أخذت metrics
+    # ========================================================================
+    # Fetch Unprocessed Articles
+    # ========================================================================
+    
+    async with pool.acquire() as conn:
         rows = await conn.fetch(
             """
             SELECT
-              rn.id AS raw_news_id,
-              rn.title_original,
-              rn.content_original,
-              l.code AS rn_lang_code
-            FROM raw_news rn
-            JOIN languages l ON l.id = rn.language_id
-            WHERE rn.has_numbers = true
-              AND EXISTS (SELECT 1 FROM news_events ne WHERE ne.raw_news_id = rn.id)
-              AND NOT EXISTS (
+                ne.id AS event_id,
+                ne.place_name,
+                COALESCE(t.content, rn.content_original) AS content
+            FROM news_events ne
+            JOIN raw_news rn ON rn.id = ne.raw_news_id
+            LEFT JOIN translations t ON t.raw_news_id = rn.id
+            WHERE
+                rn.has_numbers = true
+            AND NOT EXISTS (
                 SELECT 1
-                FROM news_events ne
-                JOIN event_metrics em ON em.event_id = ne.id
-                WHERE ne.raw_news_id = rn.id
-              )
-            ORDER BY rn.id DESC
-            LIMIT $1
+                FROM event_metrics em
+                WHERE em.event_id = ne.id
+            )
+            LIMIT $1;
             """,
-            batch_size
+            batch_size,
         )
 
-    # ============================================================================
-    # Step 3: Process Each News Item
-    # ============================================================================
-    processed_news = 0
+    processed = 0
     metrics_created = 0
-    skipped_no_text = 0
-    skipped_no_metrics = 0
 
+    # ========================================================================
+    # Process Each Article
+    # ========================================================================
+    
     for r in rows:
-        processed_news += 1
-        raw_news_id = int(r["raw_news_id"])
+        processed += 1
 
-        # اختيار النص المناسب
-        async with pool.acquire() as conn:
-            event_id = await _get_anchor_event_id(conn, raw_news_id)
-            if not event_id:
+        event_id = r["event_id"]
+        place_name = r["place_name"]
+        text = r["content"] or ""
+
+        # Split content into sentences
+        sentences = re.split(r"[\.!\؟\n]", text)
+
+        for sentence in sentences:
+            # Only process sentences that mention the location
+            # This ensures metrics are relevant to the specific place
+            if place_name not in sentence:
                 continue
 
-            text, prefer_lang = await _pick_text_for_news(
-                conn,
-                raw_news_id=raw_news_id,
-                rn_lang_code=r["rn_lang_code"],
-                title_original=r["title_original"],
-                content_original=r["content_original"],
-                ar_lang_id=ar_lang_id
-            )
+            # Extract metrics from the sentence
+            metrics = extract_metrics(sentence)
 
-        # تخطي إذا ما في نص
-        if not text:
-            skipped_no_text += 1
-            continue
+            if not metrics:
+                continue
 
-        # استخراج metrics
-        metrics = extract_war_metrics(text, prefer_lang=prefer_lang)
-        if not metrics:
-            skipped_no_metrics += 1
-            continue
+            # ================================================================
+            # Store Metrics in Database
+            # ================================================================
+            
+            async with pool.acquire() as conn:
+                for m in metrics:
+                    # Store each metric with:
+                    # - event_id: Links metric to the news event
+                    # - metric_type: Type of metric (killed, missiles_launched, etc.)
+                    # - value: The numerical value
+                    # - snippet: First 200 chars of the sentence (for reference)
+                    
+                    await conn.execute(
+                        """
+                        INSERT INTO event_metrics
+                        (event_id, metric_type, value, snippet)
+                        VALUES ($1,$2,$3,$4)
+                        """,
+                        event_id,
+                        m["metric_type"],
+                        m["value"],
+                        sentence[:200],
+                    )
 
-        # ============================================================================
-        # Step 4: Store Metrics in Database
-        # ============================================================================
-        async with pool.acquire() as conn:
-            for m in metrics:
-                # خزن الـ metric مع snippet من النص (أول 200 حرف)
-                await conn.execute(
-                    """
-                    INSERT INTO event_metrics (event_id, metric_type, value, snippet)
-                    VALUES ($1, $2, $3, $4)
-                    ON CONFLICT DO NOTHING
-                    """,
-                    event_id,
-                    m["metric_type"],
-                    m["value"],
-                    m["snippet"]
-                )
-                metrics_created += 1
+                    metrics_created += 1
 
-    # ============================================================================
-    # Return Statistics
-    # ============================================================================
     return {
-        "processed_news": processed_news,
+        "processed_events": processed,
         "metrics_created": metrics_created,
-        "skipped_no_text": skipped_no_text,
-        "skipped_no_metrics": skipped_no_metrics
     }

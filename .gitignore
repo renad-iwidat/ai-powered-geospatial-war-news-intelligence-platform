@@ -1,9 +1,8 @@
 # venv
-.venv/
-venv/
+
 venv311/
 .venv311/
-
+.env
 # python
 __pycache__/
 *.py[cod]

@@ -1,43 +1,37 @@
-from fastapi import FastAPI, Query
+"""
+GeoNews API Backend
+Main application entry point with all endpoints
+"""
+
+from fastapi import FastAPI, Query, HTTPException, Body
 from dotenv import load_dotenv
-from .services.metrics_processor import process_metrics
+import asyncpg
+
 from .db import init_db, close_db, get_pool
 from .settings import NEWS_VIEW_NAME, MAX_SNAPSHOT_LIMIT
-import asyncpg
-from fastapi import HTTPException, Query, Body
+from .services.metrics_processor import process_metrics
+from .services.location_processor import process_locations
+
 load_dotenv()
 
-# إنشاء تطبيق FastAPI
+# ============================================================================
+# Application Setup
+# ============================================================================
+
 app = FastAPI(
     title="GeoNews API",
     description="Backend API for GeoNews AI platform",
     version="1.0"
 )
 
-from fastapi import HTTPException
 
-@app.get("/health")
-async def health():
-    pool = get_pool()
-    try:
-        async with pool.acquire() as conn:
-            await conn.execute("SELECT 1")
-        return {"status": "ok", "db": "ok"}
-    except Exception as e:
-        raise HTTPException(status_code=503, detail=f"db not ready: {str(e)}")
-# ================================
-# Startup Event
-# ================================
+# ============================================================================
+# Lifecycle Events
+# ============================================================================
 
 @app.on_event("startup")
 async def startup_event():
-    """
-    يتم تنفيذ هذه الدالة عند تشغيل السيرفر.
-
-    الهدف:
-    إنشاء connection pool لقاعدة البيانات.
-    """
-
+    """Initialize database connection pool on server startup"""
     try:
         await init_db()
     except Exception as e:
@@ -45,43 +39,47 @@ async def startup_event():
         print("Server will continue running without database connection")
 
 
-# ================================
-# Shutdown Event
-# ================================
-
 @app.on_event("shutdown")
 async def shutdown_event():
-    """
-    يتم تنفيذ هذه الدالة عند إيقاف السيرفر.
-
-    الهدف:
-    إغلاق جميع اتصالات قاعدة البيانات.
-    """
-
+    """Close all database connections on server shutdown"""
     await close_db()
 
 
-# ================================
-# Snapshot Endpoint
-# ================================
+# ============================================================================
+# Health Check Endpoint
+# ============================================================================
 
+@app.get("/health")
+async def health():
+    try:
+        pool = get_pool()
+        async with pool.acquire() as conn:
+            await conn.execute("SELECT 1")
+        return {"status": "ok", "db": "ok"}
+    except Exception as e:
+        raise HTTPException(status_code=503, detail=f"db not ready: {str(e)}")
 
-
+# ============================================================================
+# News Endpoints
+# ============================================================================
 
 @app.get("/news/snapshot")
 async def news_snapshot(
     limit: int = Query(50, ge=1, le=200),
     offset: int = Query(0, ge=0)
 ):
+    """
+    Get a snapshot of recent news articles
+    
+    Returns latest news ordered by publication date with pagination
+    """
     limit = min(limit, MAX_SNAPSHOT_LIMIT)
 
-    # 1) احصل على pool
     try:
         pool = get_pool()
     except RuntimeError:
         raise HTTPException(status_code=503, detail="Database pool not initialized")
 
-    # 2) عرّفي query (برا أي except)
     query = f"""
     SELECT
       raw_news_id AS id,
@@ -97,9 +95,6 @@ async def news_snapshot(
     LIMIT $1 OFFSET $2
     """
 
-    # ملاحظة: لا تحطي place_name/lat/lng/event_type إلا بعد ما تعملوا processor وview فيها هالأعمدة
-
-    # 3) نفذي
     try:
         async with pool.acquire() as conn:
             rows = await conn.fetch(query, limit, offset)
@@ -111,8 +106,7 @@ async def news_snapshot(
         raise HTTPException(status_code=500, detail=f"DB error: {str(e)}")
 
     return {"count": len(rows), "items": [dict(r) for r in rows]}
-from fastapi import Query, HTTPException
-import asyncpg
+
 
 @app.get("/news/list")
 async def news_list(
@@ -122,29 +116,34 @@ async def news_list(
     place: str | None = Query(None),
     source: str = Query("auto", pattern="^(auto|raw|translation)$"),
 ):
+    """
+    Get filtered list of news articles with search and location filtering
+    
+    Parameters:
+    - q: Search query for title or content
+    - place: Filter by location/place name
+    - source: Filter by source mode (auto, raw, translation)
+    """
     try:
         pool = get_pool()
     except RuntimeError:
         raise HTTPException(status_code=503, detail="Database pool not initialized")
 
-    # نبني WHERE + params
+    # Build WHERE clause dynamically
     where = []
     params = []
     i = 1
 
-    # فلترة source_mode
     if source != "auto":
         where.append(f"source_mode = ${i}")
         params.append(source)
         i += 1
 
-    # بحث في العنوان/المحتوى العربي
     if q:
         where.append(f"(title_ar ILIKE ${i} OR content_ar ILIKE ${i})")
         params.append(f"%{q}%")
         i += 1
 
-    # فلترة مكان: لازم يكون عنده event بنفس place_name
     if place:
         where.append(f"""
         EXISTS (
@@ -158,10 +157,10 @@ async def news_list(
 
     where_sql = "WHERE " + " AND ".join(where) if where else ""
 
-    # إجمالي العدد للفرونت
+    # Get total count
     count_sql = f"SELECT COUNT(*) FROM vw_news_ar_feed {where_sql};"
 
-    # عناصر الليست: content_preview بدل full content (للأداء)
+    # Get paginated list with preview
     list_sql = f"""
       SELECT
         raw_news_id,
@@ -195,8 +194,15 @@ async def news_list(
         "offset": offset,
         "total": int(total),
     }
+
+
 @app.get("/news/{raw_news_id}")
 async def news_detail(raw_news_id: int):
+    """
+    Get detailed information about a specific news article
+    
+    Includes: full content, locations mentioned, and extracted metrics
+    """
     try:
         pool = get_pool()
     except RuntimeError:
@@ -244,24 +250,65 @@ async def news_detail(raw_news_id: int):
         "metrics": [dict(m) for m in metrics],
     }
 
-@app.post("/process/locations")
-async def run_locations_processor(batch_size: int = Body(20)):
+
+# ============================================================================
+# Location Endpoints
+# ============================================================================
+
+@app.get("/places")
+async def places_list(limit: int = Query(200, ge=1, le=2000)):
+    """
+    Get list of all locations mentioned in news articles
+    
+    Returns locations sorted by frequency of mention
+    """
     try:
         pool = get_pool()
     except RuntimeError:
         raise HTTPException(status_code=503, detail="Database pool not initialized")
 
-    from .services.location_processor import process_locations
+    sql = """
+      SELECT place_name, COUNT(*) AS c
+      FROM news_events
+      GROUP BY place_name
+      ORDER BY c DESC, place_name ASC
+      LIMIT $1;
+    """
+    async with pool.acquire() as conn:
+        rows = await conn.fetch(sql, limit)
+
+    return {"items": [r["place_name"] for r in rows]}
+
+
+# ============================================================================
+# Processing Endpoints
+# ============================================================================
+
+@app.post("/process/locations")
+async def run_locations_processor(batch_size: int = Body(20)):
+    """
+    Trigger location processing for news articles
+    
+    Extracts and geocodes locations from news content
+    """
+    try:
+        pool = get_pool()
+    except RuntimeError:
+        raise HTTPException(status_code=503, detail="Database pool not initialized")
+
     return await process_locations(pool, batch_size=batch_size, sleep_seconds=1.0)
 
-from fastapi import Body, HTTPException
 
 @app.post("/process/metrics")
 async def run_metrics_processor(batch_size: int = Body(50)):
+    """
+    Trigger metrics extraction for news articles
+    
+    Extracts numerical metrics (casualties, weapons, etc.) from news content
+    """
     try:
         pool = get_pool()
     except RuntimeError:
         raise HTTPException(status_code=503, detail="Database pool not initialized")
 
-    from .services.metrics_processor import process_metrics
     return await process_metrics(pool, batch_size=batch_size)

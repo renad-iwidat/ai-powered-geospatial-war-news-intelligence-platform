@@ -20,14 +20,16 @@ from typing import List
 # ============================================================================
 # Initialize Stanza Pipeline
 # ============================================================================
+MODEL_DIR = os.getenv("STANZA_MODEL_DIR", "models")  # نفس المسار اللي رح ننزل فيه وقت الـ Build
+
 # تحميل الـ pipeline مرة واحدة عند استيراد الملف
-# يحتوي على tokenizer و NER للعربية
 nlp = stanza.Pipeline(
     lang="ar",
     processors="tokenize,ner",
-    tokenize_no_ssplit=True
+    tokenize_no_ssplit=True,
+    model_dir=MODEL_DIR,
+    use_gpu=False
 )
-
 
 # ============================================================================
 # Helper Functions
