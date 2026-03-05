@@ -1,9 +1,30 @@
+# FastAPI Framework
 fastapi
 uvicorn[standard]
-psycopg[binary]
-psycopg-pool
+
+# Configuration
 python-dotenv
 pydantic
+pydantic-settings
+
+# Database
 asyncpg
+
+# Geocoding
+geopy
+
+# Arabic NLP - CAMeL Tools
+camel-tools
+
+# Time Series Forecasting & ML
+prophet
+pandas
+numpy
+scikit-learn
+
+# AI/LLM Integration
+openai
+
+# HTTP Client
 httpx
-stanza
+certifi

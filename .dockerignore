@@ -1,0 +1,56 @@
+# Python
+__pycache__/
+*.py[cod]
+*$py.class
+*.so
+.Python
+env/
+venv/
+ENV/
+.venv
+
+# IDEs
+.vscode/
+.idea/
+*.swp
+*.swo
+
+# Environment
+.env
+.env.local
+
+# Frontend
+frontend/
+node_modules/
+
+# Git
+.git/
+.gitignore
+
+# Documentation
+*.md
+!README.md
+
+# Scripts (keep only necessary ones)
+scripts/check_*.py
+scripts/debug_*.py
+scripts/test_*.py
+scripts/inspect_*.py
+scripts/analyze_*.py
+scripts/verify_*.py
+scripts/find_*.py
+scripts/fix_*.py
+scripts/update_*.py
+scripts/clean_*.py
+scripts/delete_*.py
+
+# Logs
+*.log
+
+# Database
+*.db
+*.sqlite
+
+# OS
+.DS_Store
+Thumbs.db

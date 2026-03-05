@@ -1,0 +1,49 @@
+{
+  "app": {
+    "title": "GeoNews AI",
+    "subtitle": "🔴 LIVE - War Intelligence",
+    "footer": "Designed by Liminal Unit - Media Center at An-Najah National University"
+  },
+  "nav": {
+    "news": "Latest News",
+    "map": "Interactive Map",
+    "analytics": "Analytics",
+    "predictions": "Predictions"
+  },
+  "news": {
+    "title": "Breaking News",
+    "noData": "No news available",
+    "events": "events",
+    "metrics": "metrics"
+  },
+  "map": {
+    "title": "Event Locations Map",
+    "events": "Events"
+  },
+  "analytics": {
+    "title": "Statistics & Analytics",
+    "overview": "Overview",
+    "totalArticles": "Total Articles",
+    "totalEvents": "Total Events",
+    "totalLocations": "Locations",
+    "totalMetrics": "Metrics",
+    "byCountry": "By Country",
+    "timeline": "Timeline",
+    "articles": "Articles",
+    "events": "Events",
+    "metrics": "Metrics"
+  },
+  "predictions": {
+    "title": "Predictive Analysis",
+    "comingSoon": "Coming Soon",
+    "description": "AI-powered predictions and forecasting will be available here"
+  },
+  "language": {
+    "switch": "العربية"
+  },
+  "liveStream": {
+    "title": "Live News Coverage",
+    "live": "LIVE",
+    "source": "Al Jazeera"
+  }
+}

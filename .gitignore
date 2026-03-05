@@ -1,17 +1,54 @@
-# venv
-
-venv311/
-.venv311/
-.env
-# python
+# Python
 __pycache__/
 *.py[cod]
 *.pyo
 *.pyd
 .pytest_cache/
 .mypy_cache/
+*.egg-info/
+dist/
+build/
 
-# OS / editor
-.DS_Store
+# Virtual Environment
+venv/
+venv311/
+.venv/
+.venv311/
+env/
+ENV/
+
+# Environment Variables
+.env
+.env.local
+
+# IDE
 .vscode/
 .idea/
+*.swp
+*.swo
+*~
+
+# OS
+.DS_Store
+Thumbs.db
+
+# Logs
+*.log
+logs/
+
+# Database
+*.db
+*.sqlite
+*.sqlite3
+
+# Docker
+.env.docker
+
+# Frontend
+frontend/node_modules/
+frontend/.next/
+frontend/out/
+frontend/.env.local
+
+# CAMeL Tools cache (optional - comment out if you want to keep models)
+# ~/.camel_tools/
