@@ -35,8 +35,13 @@ COPY . .
 RUN useradd -m -u 1000 appuser
 
 # Copy CAMeL Tools data to appuser home directory
-RUN cp -r /root/.camel_tools /home/appuser/.camel_tools && \
-    chown -R appuser:appuser /home/appuser/.camel_tools && \
+RUN if [ -d /root/.camel_tools ]; then \
+        cp -r /root/.camel_tools /home/appuser/.camel_tools && \
+        chown -R appuser:appuser /home/appuser/.camel_tools; \
+    else \
+        echo "WARNING: CAMeL Tools data not found in /root/.camel_tools"; \
+        ls -la /root/; \
+    fi && \
     chown -R appuser:appuser /app
 
 USER appuser
