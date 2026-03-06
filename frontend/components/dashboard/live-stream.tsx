@@ -27,7 +27,7 @@ export function LiveStream() {
         <div className="relative w-full" style={{ paddingBottom: '56.25%' }}>
           <iframe
             className="absolute top-0 left-0 w-full h-full"
-            src="https://www.youtube.com/embed/bNyUyrR0PHo?autoplay=1&mute=1&controls=1&modestbranding=1&rel=0"
+            src="https://www.youtube.com/embed/f6VpkfV7m4Y?autoplay=1&mute=1&controls=1&modestbranding=1&rel=0"
             title={locale === 'ar' ? 'البث المباشر - الجزيرة' : 'Live Stream - Al Jazeera'}
             allow="accelerometer; autoplay; clipboard-write; encrypted-media; gyroscope; picture-in-picture"
             allowFullScreen

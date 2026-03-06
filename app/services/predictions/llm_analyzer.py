@@ -96,12 +96,12 @@ Return response in this JSON format:
     "key_factors": ["observable factor1", "observable factor2", ...],
     "risk_level": "low|medium|high|critical",
     "summary": {{
-        "en": "Objective summary based on data patterns...",
-        "ar": "ملخص موضوعي بناءً على أنماط البيانات..."
+        "en": "Direct analysis without prefixes like 'Based on data patterns' or 'Objective summary'. Start immediately with the actual content.",
+        "ar": "تحليل مباشر بدون مقدمات مثل 'بناءً على أنماط البيانات' أو 'ملخص موضوعي'. ابدأ مباشرة بالمحتوى الفعلي."
     }},
     "insights": {{
-        "en": "Neutral analytical insights focusing on patterns and trends...",
-        "ar": "رؤى تحليلية محايدة تركز على الأنماط والاتجاهات..."
+        "en": "Direct insights without prefixes like 'Neutral analytical insights' or 'Analysis shows'. Start immediately with the actual insights.",
+        "ar": "رؤى مباشرة بدون مقدمات مثل 'رؤى تحليلية محايدة' أو 'يظهر التحليل'. ابدأ مباشرة بالرؤى الفعلية."
     }},
     "highest_risk_day": {{"date": "YYYY-MM-DD", "reason": "data-based reason"}},
     "lowest_activity_day": {{"date": "YYYY-MM-DD", "reason": "data-based reason"}},
@@ -191,13 +191,13 @@ Provide objective trend analysis in JSON format:
     "trend_strength": <0-100>,
     "change_percentage": <number>,
     "interpretation": {{
-        "en": "Neutral interpretation based on data patterns...",
-        "ar": "تفسير محايد بناءً على أنماط البيانات..."
+        "en": "Direct interpretation without prefixes. Start immediately with the actual analysis content.",
+        "ar": "تفسير مباشر بدون مقدمات. ابدأ مباشرة بمحتوى التحليل الفعلي."
     }},
     "key_indicators": ["observable indicator1", "observable indicator2", ...],
     "next_7_days_outlook": {{
-        "en": "Objective outlook based on current patterns...",
-        "ar": "توقعات موضوعية بناءً على الأنماط الحالية..."
+        "en": "Direct outlook without prefixes. Start immediately with the actual outlook content.",
+        "ar": "توقعات مباشرة بدون مقدمات. ابدأ مباشرة بمحتوى التوقعات الفعلي."
     }},
     "confidence_level": <0-100>,
     "data_notes": {{

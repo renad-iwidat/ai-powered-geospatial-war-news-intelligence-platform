@@ -94,6 +94,10 @@ export function PredictionsSection() {
             <CardTitle className="flex items-center gap-2 text-lg text-white">
               {getTrendIcon(aiTrendData.overall_trend)}
               {locale === 'ar' ? '🎯 تحليل الاتجاه بالذكاء الاصطناعي' : '🎯 AI Trend Analysis'}
+              <span className="text-xs font-normal text-slate-400 ml-auto flex items-center gap-1">
+                <Info className="h-3 w-3" />
+                {locale === 'ar' ? 'حسب رأي الذكاء الاصطناعي والبيانات المتاحة' : 'Based on AI analysis and available data'}
+              </span>
             </CardTitle>
           </CardHeader>
           <CardContent>
@@ -166,6 +170,10 @@ export function PredictionsSection() {
           <CardTitle className="flex items-center gap-2 text-lg text-white">
             <Brain className="h-5 w-5 text-purple-500" />
             {locale === 'ar' ? '🔮 التوقعات الذكية' : '🔮 Intelligence Forecast'}
+            <span className="text-xs font-normal text-slate-400 ml-auto flex items-center gap-1">
+              <Info className="h-3 w-3" />
+              {locale === 'ar' ? 'حسب رأي الذكاء الاصطناعي والبيانات المتاحة' : 'Based on AI analysis and available data'}
+            </span>
           </CardTitle>
         </CardHeader>
         <CardContent className="pt-4">

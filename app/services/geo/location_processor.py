@@ -153,27 +153,48 @@ async def _upsert_location(
     يستخدم (osm_type, osm_id) كـ unique key.
     إذا كان المكان موجود، يحدّث الإحداثيات والبيانات.
     """
-    row = await conn.fetchrow(
-        """
-        INSERT INTO locations (name, country_code, latitude, longitude, region_level, osm_id, osm_type)
-        VALUES ($1, $2, $3, $4, $5, $6, $7)
-        ON CONFLICT (osm_type, osm_id)
-        DO UPDATE SET
-          latitude = EXCLUDED.latitude,
-          longitude = EXCLUDED.longitude,
-          country_code = EXCLUDED.country_code,
-          name = EXCLUDED.name
-        RETURNING id
-        """,
-        name,
-        country_code,
-        lat,
-        lng,
-        "unknown",
-        osm_id,
-        osm_type
-    )
-    return int(row["id"])
+    try:
+        row = await conn.fetchrow(
+            """
+            INSERT INTO locations (name, country_code, latitude, longitude, region_level, osm_id, osm_type)
+            VALUES ($1, $2, $3, $4, $5, $6, $7)
+            ON CONFLICT (osm_type, osm_id)
+            DO UPDATE SET
+              latitude = EXCLUDED.latitude,
+              longitude = EXCLUDED.longitude,
+              name = EXCLUDED.name,
+              country_code = EXCLUDED.country_code
+            RETURNING id
+            """,
+            name,
+            country_code,
+            lat,
+            lng,
+            "unknown",
+            osm_id,
+            osm_type
+        )
+        return int(row["id"])
+    except Exception as e:
+        # If fails due to name+country_code conflict, find existing
+        existing = await conn.fetchrow(
+            "SELECT id FROM locations WHERE name = $1 AND country_code = $2 LIMIT 1",
+            name,
+            country_code
+        )
+        if existing:
+            return int(existing["id"])
+        
+        # If fails due to osm conflict, find existing
+        existing = await conn.fetchrow(
+            "SELECT id FROM locations WHERE osm_type = $1 AND osm_id = $2 LIMIT 1",
+            osm_type,
+            osm_id
+        )
+        if existing:
+            return int(existing["id"])
+        
+        raise e
 
 
 async def geocode_best_effort(
