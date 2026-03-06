@@ -47,7 +47,15 @@ class IntelligenceAnalyzer:
         context = self._prepare_context(historical_data, recent_articles)
         
         # Create prompt
-        prompt = f"""You are an expert geopolitical analyst specializing in Middle East conflicts and war intelligence.
+        prompt = f"""You are an objective geopolitical intelligence analyst specializing in conflict analysis and pattern recognition.
+
+ANALYTICAL PRINCIPLES:
+- Maintain strict neutrality and objectivity
+- Base analysis solely on observable data patterns
+- Avoid political bias or taking sides
+- Present facts without moral judgments
+- Acknowledge all perspectives equally
+- Focus on patterns, trends, and probabilities
 
 HISTORICAL DATA (Last {len(historical_data)} days):
 {json.dumps(historical_data, indent=2)}
@@ -55,21 +63,27 @@ HISTORICAL DATA (Last {len(historical_data)} days):
 RECENT NEWS CONTEXT:
 {self._format_recent_news(recent_articles[:10])}
 
-TASK:
-Analyze the Iran war situation and provide:
-1. Forecast for next {days_ahead} days (realistic event counts based on patterns)
-2. Trend analysis (escalating, stable, or de-escalating)
-3. Key factors influencing the situation
-4. Confidence level (0-100%)
-5. Risk assessment
-6. Bilingual summary (English and Arabic)
+STATISTICAL CONTEXT:
+{context}
 
-IMPORTANT:
-- Base predictions on actual data patterns
-- Consider geopolitical context
-- Be realistic and objective
-- Provide specific numbers for daily forecasts
-- Explain your reasoning
+ANALYTICAL TASK:
+Analyze the conflict-related events data and provide an objective forecast for the next {days_ahead} days.
+
+Your analysis should:
+1. Identify observable patterns in the data
+2. Forecast event counts based on statistical trends
+3. Assess trend direction (escalating/stable/de-escalating) based on data
+4. Evaluate confidence levels based on data quality and consistency
+5. Identify key factors influencing patterns (without political bias)
+6. Provide risk assessment based on pattern volatility
+
+NEUTRALITY REQUIREMENTS:
+- Refer to all parties objectively (avoid loaded language)
+- Present analysis without favoring any side
+- Focus on observable events and patterns
+- Avoid speculation about intentions or morality
+- Use neutral terminology throughout
+- Acknowledge complexity and multiple factors
 
 Return response in this JSON format:
 {{
@@ -79,18 +93,22 @@ Return response in this JSON format:
     ],
     "trend": "escalating|stable|de-escalating",
     "confidence_overall": <0-100>,
-    "key_factors": ["factor1", "factor2", ...],
+    "key_factors": ["observable factor1", "observable factor2", ...],
     "risk_level": "low|medium|high|critical",
     "summary": {{
-        "en": "English summary...",
-        "ar": "الملخص بالعربية..."
+        "en": "Objective summary based on data patterns...",
+        "ar": "ملخص موضوعي بناءً على أنماط البيانات..."
     }},
     "insights": {{
-        "en": "Detailed English analysis...",
-        "ar": "التحليل التفصيلي بالعربية..."
+        "en": "Neutral analytical insights focusing on patterns and trends...",
+        "ar": "رؤى تحليلية محايدة تركز على الأنماط والاتجاهات..."
     }},
-    "highest_risk_day": {{"date": "YYYY-MM-DD", "reason": "..."}},
-    "lowest_activity_day": {{"date": "YYYY-MM-DD", "reason": "..."}}
+    "highest_risk_day": {{"date": "YYYY-MM-DD", "reason": "data-based reason"}},
+    "lowest_activity_day": {{"date": "YYYY-MM-DD", "reason": "data-based reason"}},
+    "data_quality_note": {{
+        "en": "Assessment of data completeness and reliability",
+        "ar": "تقييم اكتمال البيانات وموثوقيتها"
+    }}
 }}
 """
         
@@ -101,15 +119,26 @@ Return response in this JSON format:
                 messages=[
                     {
                         "role": "system",
-                        "content": "You are a professional war intelligence analyst. Provide objective, data-driven analysis in JSON format."
+                        "content": """You are an objective intelligence analyst with expertise in conflict data analysis and pattern recognition.
+
+Core Principles:
+- Maintain strict neutrality - do not favor any party or side
+- Base all analysis on observable data and verifiable patterns
+- Use neutral, factual language without political bias
+- Acknowledge complexity and multiple contributing factors
+- Present findings objectively without moral judgments
+- Focus on statistical patterns and trend analysis
+- Clearly distinguish between data-driven conclusions and uncertainties
+
+Your role is to provide unbiased, data-driven intelligence analysis that decision-makers can trust for its objectivity and analytical rigor."""
                     },
                     {
                         "role": "user",
                         "content": prompt
                     }
                 ],
-                temperature=0.3,  # Lower temperature for more consistent predictions
-                max_tokens=2000,
+                temperature=0.2,  # Lower temperature for more consistent, objective analysis
+                max_tokens=3000,
                 response_format={"type": "json_object"}
             )
             
@@ -140,27 +169,40 @@ Return response in this JSON format:
         Analyze current trend and provide strategic insights
         """
         
-        prompt = f"""Analyze the current trend in the Iran war based on this data:
+        prompt = f"""Analyze the current trend in conflict-related events based on this data:
 
-HISTORICAL DATA:
+HISTORICAL DATA (Last 14 days):
 {json.dumps(historical_data[-14:], indent=2)}
 
-RECENT NEWS:
+RECENT NEWS CONTEXT:
 {self._format_recent_news(recent_articles[:5])}
 
-Provide trend analysis in JSON format:
+ANALYTICAL REQUIREMENTS:
+- Maintain strict neutrality and objectivity
+- Base analysis on observable data patterns only
+- Use neutral terminology for all parties
+- Avoid political bias or taking sides
+- Focus on statistical trends and patterns
+- Acknowledge data limitations
+
+Provide objective trend analysis in JSON format:
 {{
     "overall_trend": "escalating|stable|de-escalating",
     "trend_strength": <0-100>,
     "change_percentage": <number>,
     "interpretation": {{
-        "en": "English interpretation...",
-        "ar": "التفسير بالعربية..."
+        "en": "Neutral interpretation based on data patterns...",
+        "ar": "تفسير محايد بناءً على أنماط البيانات..."
     }},
-    "key_indicators": ["indicator1", "indicator2", ...],
+    "key_indicators": ["observable indicator1", "observable indicator2", ...],
     "next_7_days_outlook": {{
-        "en": "English outlook...",
-        "ar": "التوقعات بالعربية..."
+        "en": "Objective outlook based on current patterns...",
+        "ar": "توقعات موضوعية بناءً على الأنماط الحالية..."
+    }},
+    "confidence_level": <0-100>,
+    "data_notes": {{
+        "en": "Notes on data quality and limitations",
+        "ar": "ملاحظات حول جودة البيانات والقيود"
     }}
 }}
 """
@@ -169,11 +211,16 @@ Provide trend analysis in JSON format:
             response = self.client.chat.completions.create(
                 model=self.model,
                 messages=[
-                    {"role": "system", "content": "You are a war intelligence analyst."},
+                    {
+                        "role": "system", 
+                        "content": """You are an objective intelligence analyst. Maintain strict neutrality in all analysis. 
+                        Base conclusions solely on observable data patterns. Use neutral language without political bias. 
+                        Focus on statistical trends and verifiable patterns."""
+                    },
                     {"role": "user", "content": prompt}
                 ],
-                temperature=0.3,
-                max_tokens=1000,
+                temperature=0.2,
+                max_tokens=1500,
                 response_format={"type": "json_object"}
             )
             

@@ -4,9 +4,10 @@ AI-powered predictions based on historical data
 """
 
 from fastapi import APIRouter, Query, Depends, HTTPException
-from datetime import date, timedelta
+from datetime import date, timedelta, datetime
 import asyncpg
 import logging
+import json
 
 from app.core.database import get_db_pool
 from app.core.config import settings
@@ -15,6 +16,50 @@ from app.services.predictions.llm_analyzer import IntelligenceAnalyzer
 
 router = APIRouter()
 logger = logging.getLogger(__name__)
+
+
+# ============================================================================
+# Helper Functions for Cached Forecasts
+# ============================================================================
+
+async def get_cached_forecast(
+    pool: asyncpg.Pool,
+    forecast_type: str
+) -> dict:
+    """
+    Get cached forecast from database if available and valid
+    
+    Returns None if no valid cache exists
+    """
+    query = """
+        SELECT forecast_data, generated_at, valid_until
+        FROM ai_forecasts
+        WHERE forecast_type = $1
+            AND valid_until > NOW()
+        ORDER BY generated_at DESC
+        LIMIT 1
+    """
+    
+    async with pool.acquire() as conn:
+        row = await conn.fetchrow(query, forecast_type)
+    
+    if row:
+        forecast_data = json.loads(row['forecast_data']) if isinstance(row['forecast_data'], str) else row['forecast_data']
+        
+        # Add cache metadata
+        forecast_data['cache_info'] = {
+            'cached': True,
+            'generated_at': row['generated_at'].isoformat(),
+            'valid_until': row['valid_until'].isoformat(),
+            'note': {
+                'en': 'This is a cached forecast generated at scheduled time to reduce API costs.',
+                'ar': 'هذا توقع محفوظ تم إنشاؤه في الوقت المحدد لتقليل تكاليف API.'
+            }
+        }
+        
+        return forecast_data
+    
+    return None
 
 
 @router.get("/events-forecast")
@@ -314,10 +359,11 @@ def _translate_trend_ar(trend: str) -> str:
 @router.get("/ai-intelligence-forecast")
 async def ai_intelligence_forecast(
     days: int = Query(7, ge=1, le=14, description="Number of days to forecast"),
+    force_refresh: bool = Query(False, description="Force refresh (bypass cache)"),
     pool: asyncpg.Pool = Depends(get_db_pool)
 ):
     """
-    🤖 AI-Powered Intelligence Forecast
+    🤖 AI-Powered Intelligence Forecast (CACHED)
     
     Uses OpenAI GPT to analyze war intelligence data and provide:
     - Contextual predictions based on geopolitical factors
@@ -325,12 +371,23 @@ async def ai_intelligence_forecast(
     - Risk assessment and key factors
     - Confidence levels and reasoning
     
+    **CACHING**: This endpoint returns cached forecasts generated twice daily
+    (1 PM and 9 PM Palestine time) to reduce API costs. Use force_refresh=true
+    to bypass cache (admin only).
+    
     **Note**: This is an AI-generated analysis based on historical patterns
     and recent news context. It should be used as one input among many for
     decision-making.
     """
     
     try:
+        # Try to get cached forecast first (unless force refresh)
+        if not force_refresh:
+            cached = await get_cached_forecast(pool, 'intelligence_forecast')
+            if cached:
+                logger.info("Returning cached intelligence forecast")
+                return cached
+        
         # Check if OpenAI API key is configured
         if not settings.OPENAI_API_KEY:
             raise HTTPException(
@@ -418,17 +475,27 @@ async def ai_intelligence_forecast(
 
 @router.get("/ai-trend-analysis")
 async def ai_trend_analysis(
+    force_refresh: bool = Query(False, description="Force refresh (bypass cache)"),
     pool: asyncpg.Pool = Depends(get_db_pool)
 ):
     """
-    🤖 AI-Powered Trend Analysis
+    🤖 AI-Powered Trend Analysis (CACHED)
     
     Uses OpenAI GPT to analyze current trends with geopolitical context
+    
+    **CACHING**: Returns cached analysis generated twice daily to reduce costs.
     
     Returns strategic insights and outlook for next 7 days
     """
     
     try:
+        # Try to get cached analysis first
+        if not force_refresh:
+            cached = await get_cached_forecast(pool, 'trend_analysis')
+            if cached:
+                logger.info("Returning cached trend analysis")
+                return cached
+        
         if not settings.OPENAI_API_KEY:
             raise HTTPException(
                 status_code=503,

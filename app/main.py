@@ -77,10 +77,8 @@ async def health_check():
     
     Returns the application status and database connectivity
     """
-    from app.core.database import get_db_pool
-    
     try:
-        pool = get_db_pool()
+        pool = db_manager.get_pool()
         async with pool.acquire() as conn:
             await conn.execute("SELECT 1")
         return {

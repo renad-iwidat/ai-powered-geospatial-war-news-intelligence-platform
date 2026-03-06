@@ -61,7 +61,7 @@ services:
     container_name: geonews-frontend
     restart: unless-stopped
     environment:
-      NEXT_PUBLIC_API_URL: ${NEXT_PUBLIC_API_URL:-http://localhost:8000}
+      NEXT_PUBLIC_API_URL: http://backend:8000
     ports:
       - "3000:3000"
     depends_on:
@@ -70,7 +70,7 @@ services:
       - geonews-network
 
   # Data Processor (runs every 15 minutes)
-  # Processes news data: NER extraction, geocoding, metrics extraction
+  # Processes small batches: 10 news for locations, 20 events for metrics
   processor:
     build:
       context: .
@@ -83,10 +83,52 @@ services:
     command: >
       sh -c "
         while true; do
-          echo '[Processor] Running at $(date)'
-          python scripts/process_all_data.py
+          echo '[Processor] Running batch at $$(date)'
+          python scripts/process_batch.py
           echo '[Processor] Completed. Next run in 15 minutes...'
           sleep 900
+        done
+      "
+    depends_on:
+      postgres:
+        condition: service_healthy
+    networks:
+      - geonews-network
+    volumes:
+      - ./scripts:/app/scripts:ro
+
+  # AI Forecast Generator (runs twice daily: 1 PM & 9 PM Palestine time = 11 AM & 7 PM UTC)
+  # Generates intelligence forecasts and trend analysis, caches for 8 hours
+  ai-forecast:
+    build:
+      context: .
+      dockerfile: Dockerfile
+    container_name: geonews-ai-forecast
+    restart: unless-stopped
+    environment:
+      DATABASE_URL: postgresql://${POSTGRES_USER:-geonews_user}:${POSTGRES_PASSWORD:-changeme}@postgres:5432/${POSTGRES_DB:-geonews_db}
+      OPENAI_API_KEY: ${OPENAI_API_KEY}
+      OPENAI_MODEL: ${OPENAI_MODEL:-gpt-4o}
+    command: >
+      sh -c "
+        while true; do
+          current_hour=$$(date -u +%H)
+          current_minute=$$(date -u +%M)
+          
+          # Run at 11:00 UTC (1 PM Palestine) and 19:00 UTC (9 PM Palestine)
+          if [ \"$$current_hour\" = \"11\" ] && [ \"$$current_minute\" -lt \"15\" ]; then
+            echo '[AI Forecast] Running 1 PM forecast at $$(date)'
+            python scripts/generate_ai_forecasts.py
+            echo '[AI Forecast] Completed. Sleeping until next run...'
+            sleep 3600
+          elif [ \"$$current_hour\" = \"19\" ] && [ \"$$current_minute\" -lt \"15\" ]; then
+            echo '[AI Forecast] Running 9 PM forecast at $$(date)'
+            python scripts/generate_ai_forecasts.py
+            echo '[AI Forecast] Completed. Sleeping until next run...'
+            sleep 3600
+          else
+            sleep 300
+          fi
         done
       "
     depends_on:
