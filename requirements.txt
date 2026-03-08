@@ -28,3 +28,10 @@ openai
 # HTTP Client
 httpx
 certifi
+requests
+
+# Interactive Visualizations
+plotly
+
+# Background Task Scheduling
+apscheduler

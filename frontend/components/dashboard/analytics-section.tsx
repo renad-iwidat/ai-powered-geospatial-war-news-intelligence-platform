@@ -69,13 +69,13 @@ export function AnalyticsSection() {
                   </div>
                   <div className={`text-right px-4 py-2 rounded-lg ${
                     marketData.oil.change_7d && marketData.oil.change_7d > 0 
-                      ? 'bg-red-500/20' 
-                      : 'bg-green-500/20'
+                      ? 'bg-green-500/20' 
+                      : 'bg-red-500/20'
                   }`}>
                     <div className={`text-2xl font-bold ${
                       marketData.oil.change_7d && marketData.oil.change_7d > 0 
-                        ? 'text-red-400' 
-                        : 'text-green-400'
+                        ? 'text-green-400' 
+                        : 'text-red-400'
                     }`}>
                       {marketData.oil.change_7d ? `${marketData.oil.change_7d > 0 ? '↑' : '↓'} ${Math.abs(marketData.oil.change_7d).toFixed(1)}%` : 'N/A'}
                     </div>
@@ -96,8 +96,8 @@ export function AnalyticsSection() {
                         <defs>
                           {/* Gradient for area fill */}
                           <linearGradient id="areaGradient" x1="0%" y1="0%" x2="0%" y2="100%">
-                            <stop offset="0%" stopColor={marketData.oil.change_7d && marketData.oil.change_7d > 0 ? "#f87171" : "#4ade80"} stopOpacity="0.3" />
-                            <stop offset="100%" stopColor={marketData.oil.change_7d && marketData.oil.change_7d > 0 ? "#f87171" : "#4ade80"} stopOpacity="0.05" />
+                            <stop offset="0%" stopColor={marketData.oil.change_7d && marketData.oil.change_7d > 0 ? "#4ade80" : "#f87171"} stopOpacity="0.3" />
+                            <stop offset="100%" stopColor={marketData.oil.change_7d && marketData.oil.change_7d > 0 ? "#4ade80" : "#f87171"} stopOpacity="0.05" />
                           </linearGradient>
                         </defs>
                         
@@ -107,13 +107,13 @@ export function AnalyticsSection() {
                         <line x1="0" y1="75" x2="100" y2="75" stroke="#475569" strokeWidth="0.2" opacity="0.5" />
                         
                         {(() => {
-                          const prices = marketData.oil.trend.slice().reverse();
+                          const prices = marketData.oil.trend; // Don't reverse - keep original order
                           const maxPrice = Math.max(...prices.map(p => p.price));
                           const minPrice = Math.min(...prices.map(p => p.price));
                           const range = maxPrice - minPrice || 1;
                           
-                          // Create smooth path points
-                          const points = prices.map((point, idx) => {
+                          // Create smooth path points - reversed for RTL display
+                          const points = prices.slice().reverse().map((point, idx) => {
                             const x = (idx / (prices.length - 1)) * 100;
                             const y = 100 - ((point.price - minPrice) / range) * 80 - 10; // 10% padding top/bottom
                             return { x, y, price: point.price, date: point.date };
@@ -146,7 +146,7 @@ export function AnalyticsSection() {
                               <path
                                 d={pathD}
                                 fill="none"
-                                stroke={marketData.oil.change_7d && marketData.oil.change_7d > 0 ? "#f87171" : "#4ade80"}
+                                stroke={marketData.oil.change_7d && marketData.oil.change_7d > 0 ? "#4ade80" : "#f87171"}
                                 strokeWidth="0.5"
                                 strokeLinecap="round"
                                 strokeLinejoin="round"
@@ -159,7 +159,7 @@ export function AnalyticsSection() {
                                     cx={point.x}
                                     cy={point.y}
                                     r="0.8"
-                                    fill={marketData.oil.change_7d && marketData.oil.change_7d > 0 ? "#f87171" : "#4ade80"}
+                                    fill={marketData.oil.change_7d && marketData.oil.change_7d > 0 ? "#4ade80" : "#f87171"}
                                     className="cursor-pointer"
                                   />
                                   <title>${point.price.toFixed(2)} - {point.date}</title>
@@ -180,11 +180,17 @@ export function AnalyticsSection() {
                     
                     {/* X-axis labels */}
                     <div className="flex justify-between mt-2 text-[9px] text-slate-500 px-12">
-                      {marketData.oil.trend.slice().reverse().filter((_, idx, arr) => idx === 0 || idx === Math.floor(arr.length / 2) || idx === arr.length - 1).map((point, idx) => (
-                        <span key={idx}>
-                          {new Date(point.date).toLocaleDateString(locale === 'ar' ? 'ar-EG' : 'en-US', { day: 'numeric', month: 'short' })}
-                        </span>
-                      ))}
+                      {(() => {
+                        const filteredIndices = [0, Math.floor(marketData.oil.trend.length / 2), marketData.oil.trend.length - 1];
+                        return filteredIndices.map((idx) => {
+                          const point = marketData.oil.trend[idx];
+                          return (
+                            <span key={idx}>
+                              {new Date(point.date).toLocaleDateString(locale === 'ar' ? 'ar-EG' : 'en-US', { day: 'numeric', month: 'short' })}
+                            </span>
+                          );
+                        });
+                      })()}
                     </div>
                   </div>
                 )}

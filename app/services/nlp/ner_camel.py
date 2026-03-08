@@ -1,6 +1,7 @@
 """
 Arabic Named Entity Recognition using CAMeL Tools
 High-quality NER for Arabic text
+Falls back to simple NER if model is not available
 """
 
 import re
@@ -12,13 +13,31 @@ from camel_tools.ner import NERecognizer
 # Initialize CAMeL NER
 # ============================================================================
 _ner = None
+_ner_available = False
 
 def get_ner():
     """Get or initialize CAMeL NER"""
-    global _ner
+    global _ner, _ner_available
     if _ner is None:
-        _ner = NERecognizer.pretrained()
+        try:
+            _ner = NERecognizer.pretrained()
+            _ner_available = True
+        except Exception as e:
+            import logging
+            logging.warning(f"CAMeL NER model not available: {str(e)}")
+            logging.warning("Falling back to simple NER")
+            _ner_available = False
+            _ner = None
     return _ner
+
+
+def is_ner_available():
+    """Check if CAMeL NER is available"""
+    try:
+        get_ner()
+        return _ner_available
+    except:
+        return False
 
 
 # ============================================================================
@@ -59,6 +78,7 @@ def normalize_ar(s: str) -> str:
 def extract_places_ner(text: str) -> List[str]:
     """
     Extract place names from Arabic text using CAMeL Tools NER
+    Falls back to simple NER if model is not available
     
     Extracts entities of type:
     - LOC: Geographic locations
@@ -73,8 +93,13 @@ def extract_places_ner(text: str) -> List[str]:
     if not text or len(text.strip()) < 3:
         return []
     
-    # Get NER
+    # Check if CAMeL NER is available
     ner = get_ner()
+    
+    if not ner or not _ner_available:
+        # Fall back to simple NER
+        from .ner_simple import extract_places_simple
+        return extract_places_simple(text)
     
     # Split into sentences (CAMeL works better with sentences)
     sentences = re.split(r'[\.!\؟\n]+', text)
@@ -128,8 +153,10 @@ def extract_places_ner(text: str) -> List[str]:
                 if len(normalized) >= 2:
                     places.append(normalized)
                     
-        except Exception:
+        except Exception as e:
             # Skip problematic sentences
+            import logging
+            logging.debug(f"Error processing sentence: {str(e)}")
             continue
     
     # Remove duplicates while preserving order

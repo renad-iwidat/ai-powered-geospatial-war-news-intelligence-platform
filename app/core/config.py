@@ -3,6 +3,7 @@ Core Configuration Module
 Centralized configuration management using Pydantic Settings
 """
 
+import os
 from pydantic_settings import BaseSettings
 from typing import Optional
 
@@ -33,8 +34,8 @@ class Settings(BaseSettings):
     PROJECT_NAME: str = "GeoNews AI"
     PROJECT_VERSION: str = "1.0.0"
     
-    # CORS
-    CORS_ORIGINS: list[str] = ["*"]
+    # CORS - Read as string and parse manually
+    CORS_ORIGINS_STR: str = "http://localhost:3001"
     
     # Logging
     LOG_LEVEL: str = "INFO"
@@ -46,9 +47,20 @@ class Settings(BaseSettings):
     # Alpha Vantage Configuration (Market Data)
     ALPHA_VANTAGE_API_KEY: Optional[str] = None
     
+    # Docker Configuration (optional, for docker-compose)
+    BACKEND_PORT: Optional[str] = None
+    FRONTEND_PORT: Optional[str] = None
+    API_BASE_URL: Optional[str] = None
+    
     class Config:
         env_file = ".env"
         case_sensitive = True
+        extra = "ignore"  # Ignore extra fields from .env
+    
+    @property
+    def CORS_ORIGINS(self) -> list[str]:
+        """Parse CORS_ORIGINS from comma-separated string"""
+        return [origin.strip() for origin in self.CORS_ORIGINS_STR.split(",")]
 
 
 # Global settings instance

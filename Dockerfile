@@ -24,35 +24,41 @@ COPY requirements.txt .
 # Install Python dependencies
 RUN pip install --no-cache-dir -r requirements.txt
 
-# Download CAMeL Tools data using camel_data CLI
-# This downloads the AraBERT NER model (~500MB)
-RUN camel_data -i ner-arabert
+# Download CAMeL Tools NER model
+# This is required for Arabic NER functionality
+RUN python << 'EOF'
+import os
+import sys
+
+# Create directory for CAMeL tools data
+os.makedirs('/root/.camel_tools/data/ner', exist_ok=True)
+
+try:
+    from camel_tools.ner import NERecognizer
+    print("✅ Loading CAMeL NER model...")
+    recognizer = NERecognizer.pretrained()
+    print("✅ CAMeL NER model loaded successfully")
+except Exception as e:
+    print(f"⚠️  Warning: Could not load CAMeL NER model: {e}")
+    print("System will use simple NER fallback")
+    sys.exit(0)
+EOF
 
 # Copy application code
 COPY . .
 
 # Create non-root user
-RUN useradd -m -u 1000 appuser
-
-# Copy CAMeL Tools data to appuser home directory
-RUN if [ -d /root/.camel_tools ]; then \
-        cp -r /root/.camel_tools /home/appuser/.camel_tools && \
-        chown -R appuser:appuser /home/appuser/.camel_tools; \
-    else \
-        echo "WARNING: CAMeL Tools data not found in /root/.camel_tools"; \
-        ls -la /root/; \
-    fi && \
+RUN useradd -m -u 1000 appuser && \
     chown -R appuser:appuser /app
 
 USER appuser
 
-# Expose port
-EXPOSE 8000
+# Expose port (will be overridden by docker-compose)
+EXPOSE 7235
 
 # Health check
 HEALTHCHECK --interval=30s --timeout=10s --start-period=5s --retries=3 \
-    CMD curl -f http://localhost:8000/health || exit 1
+    CMD curl -f http://localhost:7235/health || exit 1
 
 # Run the application
-# Use shell form to allow environment variable expansion
-CMD uvicorn app.main:app --host 0.0.0.0 --port ${PORT:-8000}
+CMD uvicorn app.main:app --host 0.0.0.0 --port 7235

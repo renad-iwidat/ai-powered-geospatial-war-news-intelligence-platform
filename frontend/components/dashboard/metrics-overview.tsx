@@ -63,7 +63,7 @@ export function MetricsOverview() {
       borderColor: 'border-orange-500/20',
     },
     {
-      label: 'Countries',
+      label: t('byCountry'),
       value: overview.total_countries,
       icon: Target,
       color: 'from-green-500 to-green-600',
@@ -71,7 +71,7 @@ export function MetricsOverview() {
       borderColor: 'border-green-500/20',
     },
     {
-      label: 'With Metrics',
+      label: t('metrics'),
       value: overview.events_with_metrics,
       icon: AlertCircle,
       color: 'from-yellow-500 to-yellow-600',

@@ -1,144 +1,166 @@
 """
 Market Data Endpoints
-Oil & Gold prices from public APIs
+Oil & Gold prices from Yahoo Finance API
 """
 
-from fastapi import APIRouter, HTTPException
-import httpx
-import ssl
-import certifi
+from fastapi import APIRouter
+import requests
 import logging
 from datetime import datetime, timedelta
-from app.core.config import settings
+import time
 
 router = APIRouter()
 logger = logging.getLogger(__name__)
+
+BASE_URL = "https://query1.finance.yahoo.com/v8/finance/chart"
+
+# Headers to avoid being blocked
+HEADERS = {
+    "User-Agent": "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36"
+}
+
+# Cache storage with timestamp
+_cache = {
+    "data": None,
+    "timestamp": 0,
+    "ttl": 500  # 1 minute cache - reduced to get fresher data
+}
+
+
+def fetch_asset(symbol: str):
+    """
+    Fetch asset data from Yahoo Finance
+    
+    Args:
+        symbol: GC=F (Gold Futures), CL=F (WTI Oil), or BZ=F (Brent Oil)
+    
+    Returns:
+        dict with current price, 7-day trend, and % change
+    """
+    max_retries = 3
+    retry_delay = 2  # seconds
+    
+    for attempt in range(max_retries):
+        try:
+            # Use hourly data for better accuracy
+            url = f"{BASE_URL}/{symbol}?range=7d&interval=1h"
+            response = requests.get(url, headers=HEADERS, timeout=10)
+            response.raise_for_status()
+            
+            data = response.json()
+            result = data["chart"]["result"][0]
+            
+            # Extract close prices and timestamps
+            prices = result["indicators"]["quote"][0]["close"]
+            timestamps = result["timestamp"]
+            
+            # Build trend with valid prices only
+            trend = []
+            for t, p in zip(timestamps, prices):
+                if p is not None:
+                    trend.append({
+                        "timestamp": t,
+                        "date": datetime.fromtimestamp(t).strftime('%Y-%m-%d %H:%M'),
+                        "price": round(p, 2)
+                    })
+            
+            if not trend:
+                raise ValueError(f"No valid price data for {symbol}")
+            
+            # Calculate current price and 7-day change
+            current_price = trend[-1]["price"]
+            first_price = trend[0]["price"]
+            change_7d = round((current_price - first_price) / first_price * 100, 2)
+            
+            return {
+                "current": {
+                    "price": current_price,
+                    "date": trend[-1]["date"]
+                },
+                "trend": trend,
+                "change_7d": change_7d
+            }
+            
+        except requests.exceptions.HTTPError as e:
+            if e.response.status_code == 429:  # Too Many Requests
+                if attempt < max_retries - 1:
+                    wait_time = retry_delay * (2 ** attempt)  # Exponential backoff
+                    logger.warning(f"Rate limited for {symbol}. Retrying in {wait_time}s (attempt {attempt + 1}/{max_retries})")
+                    time.sleep(wait_time)
+                    continue
+                else:
+                    logger.error(f"Rate limited for {symbol} after {max_retries} attempts")
+                    raise
+            else:
+                logger.error(f"HTTP Error fetching {symbol}: {str(e)}")
+                raise
+        except Exception as e:
+            logger.error(f"Error fetching {symbol} from Yahoo Finance: {str(e)}")
+            raise
+    
+    raise Exception(f"Failed to fetch {symbol} after {max_retries} attempts")
 
 
 @router.get("/oil-gold-prices")
 async def get_oil_gold_prices():
     """
-    Get current Oil and Gold prices
+    Get current Oil and Gold prices from Yahoo Finance
     
     Uses:
-    - Coinbase API for Gold (XAU)
-    - Public commodity APIs for Oil
+    - GC=F (Gold Futures - COMEX)
+    - CL=F (WTI Crude Oil - NYMEX)
     
-    Returns latest prices and 7-day trend
+    Returns latest prices, 7-day hourly trend, and % change
+    Cached for 5 minutes
     """
     
     try:
-        # Create SSL context with certifi certificates
-        ssl_context = ssl.create_default_context(cafile=certifi.where())
+        # Check cache
+        current_time = time.time()
+        if _cache["data"] and (current_time - _cache["timestamp"]) < _cache["ttl"]:
+            logger.info("Returning cached market data")
+            return _cache["data"]
         
-        async with httpx.AsyncClient(timeout=30.0, verify=ssl_context) as client:
-            # Get Gold price from Coinbase (XAU-USD spot price)
-            # Coinbase doesn't have XAU, so we'll use a public gold API
-            gold_response = await client.get(
-                "https://api.metals.live/v1/spot/gold"
-            )
-            gold_data = gold_response.json()
-            
-            # Get historical gold prices (last 7 days)
-            gold_history = []
-            for i in range(7):
-                date = (datetime.now() - timedelta(days=i)).strftime('%Y-%m-%d')
-                gold_history.append({
-                    "date": date,
-                    "price": gold_data[0]["price"] if gold_data else 2000  # Current price or fallback
-                })
-            
-            # Get Oil price from public API (WTI Crude)
-            # Using a mock/fallback since free oil APIs are limited
-            oil_prices = [
-                {"date": "2026-03-05", "price": 71.13},
-                {"date": "2026-03-04", "price": 70.50},
-                {"date": "2026-03-03", "price": 69.80},
-                {"date": "2026-03-02", "price": 66.96},
-                {"date": "2026-02-27", "price": 65.10},
-                {"date": "2026-02-26", "price": 65.30},
-                {"date": "2026-02-25", "price": 66.69},
-            ]
-            
-            # Parse Gold data
-            gold_current = None
-            if gold_data and len(gold_data) > 0:
-                gold_current = {
-                    "price": float(gold_data[0]["price"]),
-                    "date": datetime.now().strftime('%Y-%m-%d %H:%M:%S')
-                }
-            
-            # Parse Oil data
-            oil_current = {
-                "price": oil_prices[0]["price"],
-                "date": oil_prices[0]["date"]
-            }
-            
-            oil_trend = oil_prices
-            
-            # Calculate oil trend
-            oil_change = None
-            if len(oil_trend) >= 2:
-                oil_change = ((oil_trend[0]["price"] - oil_trend[-1]["price"]) / oil_trend[-1]["price"]) * 100
-            
-            # Calculate gold trend
-            gold_change = None
-            if len(gold_history) >= 2:
-                gold_change = ((gold_history[0]["price"] - gold_history[-1]["price"]) / gold_history[-1]["price"]) * 100
-            
-            return {
-                "oil": {
-                    "current": oil_current,
-                    "trend": oil_trend,
-                    "change_7d": round(oil_change, 2) if oil_change else None,
-                    "unit": "USD/barrel"
-                },
-                "gold": {
-                    "current": gold_current,
-                    "trend": gold_history,
-                    "change_7d": round(gold_change, 2) if gold_change else None,
-                    "unit": "USD/oz"
-                },
-                "analysis": {
-                    "en": f"Oil prices {'increased' if oil_change and oil_change > 0 else 'decreased'} by {abs(oil_change):.1f}% over the last 7 days. Gold {'increased' if gold_change and gold_change > 0 else 'decreased'} by {abs(gold_change):.1f}%. This {'may indicate increased' if oil_change and oil_change > 0 else 'suggests reduced'} geopolitical tensions." if oil_change else "Market data available.",
-                    "ar": f"أسعار النفط {'ارتفعت' if oil_change and oil_change > 0 else 'انخفضت'} بنسبة {abs(oil_change):.1f}٪ خلال آخر 7 أيام. الذهب {'ارتفع' if gold_change and gold_change > 0 else 'انخفض'} بنسبة {abs(gold_change):.1f}٪. هذا {'قد يشير إلى زيادة' if oil_change and oil_change > 0 else 'يشير إلى انخفاض'} التوترات الجيوسياسية." if oil_change else "بيانات السوق متاحة."
-                }
-            }
+        # Fetch fresh data
+        logger.info("Fetching fresh market data from Yahoo Finance")
         
-    except Exception as e:
-        logger.error(f"Error fetching market data: {str(e)}")
-        # Return fallback data instead of error
-        return {
-            "oil": {
-                "current": {"price": 71.13, "date": "2026-03-05"},
-                "trend": [
-                    {"date": "2026-03-05", "price": 71.13},
-                    {"date": "2026-03-04", "price": 70.50},
-                    {"date": "2026-03-03", "price": 69.80},
-                    {"date": "2026-03-02", "price": 66.96},
-                    {"date": "2026-02-27", "price": 65.10},
-                    {"date": "2026-02-26", "price": 65.30},
-                    {"date": "2026-02-25", "price": 66.69},
-                ],
-                "change_7d": 6.66,
-                "unit": "USD/barrel"
-            },
+        gold_data = fetch_asset("GC=F")
+        oil_data = fetch_asset("CL=F")
+        
+        response = {
             "gold": {
-                "current": {"price": 2650.50, "date": datetime.now().strftime('%Y-%m-%d %H:%M:%S')},
-                "trend": [
-                    {"date": "2026-03-05", "price": 2650.50},
-                    {"date": "2026-03-04", "price": 2645.20},
-                    {"date": "2026-03-03", "price": 2640.80},
-                    {"date": "2026-03-02", "price": 2635.30},
-                    {"date": "2026-02-27", "price": 2630.10},
-                    {"date": "2026-02-26", "price": 2625.50},
-                    {"date": "2026-02-25", "price": 2620.00},
-                ],
-                "change_7d": 1.16,
-                "unit": "USD/oz"
+                "current": gold_data["current"],
+                "trend": gold_data["trend"],
+                "change_7d": gold_data["change_7d"],
+                "unit": "USD/oz",
+                "symbol": "GC=F"
+            },
+            "oil": {
+                "current": oil_data["current"],
+                "trend": oil_data["trend"],
+                "change_7d": oil_data["change_7d"],
+                "unit": "USD/barrel",
+                "symbol": "CL=F"
             },
             "analysis": {
-                "en": "Oil prices increased by 6.7% over the last 7 days. Gold increased by 1.2%. This may indicate increased geopolitical tensions.",
-                "ar": "أسعار النفط ارتفعت بنسبة 6.7٪ خلال آخر 7 أيام. الذهب ارتفع بنسبة 1.2٪. هذا قد يشير إلى زيادة التوترات الجيوسياسية."
+                "en": f"Gold prices {'increased' if gold_data['change_7d'] > 0 else 'decreased'} by {abs(gold_data['change_7d']):.1f}% over the last 7 days. Oil prices {'increased' if oil_data['change_7d'] > 0 else 'decreased'} by {abs(oil_data['change_7d']):.1f}%. This {'may indicate increased' if oil_data['change_7d'] > 0 else 'suggests reduced'} geopolitical tensions.",
+                "ar": f"أسعار الذهب {'ارتفعت' if gold_data['change_7d'] > 0 else 'انخفضت'} بنسبة {abs(gold_data['change_7d']):.1f}٪ خلال آخر 7 أيام. أسعار النفط {'ارتفعت' if oil_data['change_7d'] > 0 else 'انخفضت'} بنسبة {abs(oil_data['change_7d']):.1f}٪. هذا {'قد يشير إلى زيادة' if oil_data['change_7d'] > 0 else 'يشير إلى انخفاض'} التوترات الجيوسياسية."
             }
         }
+        
+        # Update cache
+        _cache["data"] = response
+        _cache["timestamp"] = current_time
+        
+        return response
+        
+    except Exception as e:
+        logger.error(f"Error in get_oil_gold_prices: {str(e)}")
+        
+        # Return cached data if available, otherwise raise error
+        if _cache["data"]:
+            logger.info("Returning previously cached data due to fetch error")
+            return _cache["data"]
+        
+        # No cache available - raise error to client
+        raise

@@ -44,9 +44,9 @@ COPY --from=builder --chown=nextjs:nodejs /app/.next/static ./.next/static
 
 USER nextjs
 
-EXPOSE 3000
+EXPOSE 3001
 
 ENV HOSTNAME="0.0.0.0"
 
-# Use shell form to allow PORT environment variable from Render
-CMD sh -c "PORT=${PORT:-3000} node server.js"
+# Use shell form to allow PORT environment variable from docker-compose
+CMD sh -c "PORT=${FRONTEND_PORT:-3001} node server.js"

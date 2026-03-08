@@ -1,30 +1,11 @@
 # Docker Compose for GeoNews AI Platform
+# Database is hosted on Render
+# Backend runs API + Scheduler together
+# Frontend runs Next.js
 version: '3.8'
 
 services:
-  # PostgreSQL Database
-  postgres:
-    image: postgres:15-alpine
-    container_name: geonews-db
-    restart: unless-stopped
-    environment:
-      POSTGRES_DB: ${POSTGRES_DB:-geonews_db}
-      POSTGRES_USER: ${POSTGRES_USER:-geonews_user}
-      POSTGRES_PASSWORD: ${POSTGRES_PASSWORD:-changeme}
-      PGDATA: /var/lib/postgresql/data/pgdata
-    volumes:
-      - postgres_data:/var/lib/postgresql/data
-    ports:
-      - "5432:5432"
-    healthcheck:
-      test: ["CMD-SHELL", "pg_isready -U ${POSTGRES_USER:-geonews_user}"]
-      interval: 10s
-      timeout: 5s
-      retries: 5
-    networks:
-      - geonews-network
-
-  # Backend API (FastAPI)
+  # Backend API + Scheduler (FastAPI with integrated scheduler)
   backend:
     build:
       context: .
@@ -32,17 +13,15 @@ services:
     container_name: geonews-backend
     restart: unless-stopped
     environment:
-      DATABASE_URL: postgresql://${POSTGRES_USER:-geonews_user}:${POSTGRES_PASSWORD:-changeme}@postgres:5432/${POSTGRES_DB:-geonews_db}
+      DATABASE_URL: ${DATABASE_URL}
       OPENAI_API_KEY: ${OPENAI_API_KEY}
-      ALPHA_VANTAGE_API_KEY: ${ALPHA_VANTAGE_API_KEY}
-      CORS_ORIGINS: ${CORS_ORIGINS:-http://localhost:3000,http://frontend:3000}
+      OPENAI_MODEL: ${OPENAI_MODEL}
+      NEWS_VIEW_NAME: ${NEWS_VIEW_NAME}
+      CORS_ORIGINS: ${CORS_ORIGINS}
     ports:
-      - "8000:8000"
-    depends_on:
-      postgres:
-        condition: service_healthy
+      - "${BACKEND_PORT}:7235"
     healthcheck:
-      test: ["CMD", "curl", "-f", "http://localhost:8000/health"]
+      test: ["CMD", "curl", "-f", "http://localhost:7235/health"]
       interval: 30s
       timeout: 10s
       retries: 3
@@ -58,91 +37,39 @@ services:
     build:
       context: ./frontend
       dockerfile: Dockerfile
+      args:
+        NEXT_PUBLIC_API_URL: http://backend:7235
     container_name: geonews-frontend
     restart: unless-stopped
     environment:
-      NEXT_PUBLIC_API_URL: http://backend:8000
+      FRONTEND_PORT: ${FRONTEND_PORT}
+      NEXT_PUBLIC_API_URL: http://backend:7235
     ports:
-      - "3000:3000"
+      - "${FRONTEND_PORT}:3001"
     depends_on:
       - backend
     networks:
       - geonews-network
 
-  # Data Processor (runs every 15 minutes)
-  # Processes small batches: 10 news for locations, 20 events for metrics
-  processor:
-    build:
-      context: .
-      dockerfile: Dockerfile
-    container_name: geonews-processor
-    restart: unless-stopped
-    environment:
-      DATABASE_URL: postgresql://${POSTGRES_USER:-geonews_user}:${POSTGRES_PASSWORD:-changeme}@postgres:5432/${POSTGRES_DB:-geonews_db}
-      OPENAI_API_KEY: ${OPENAI_API_KEY}
-    command: >
-      sh -c "
-        while true; do
-          echo '[Processor] Running batch at $$(date)'
-          python scripts/process_batch.py
-          echo '[Processor] Completed. Next run in 15 minutes...'
-          sleep 900
-        done
-      "
-    depends_on:
-      postgres:
-        condition: service_healthy
-    networks:
-      - geonews-network
-    volumes:
-      - ./scripts:/app/scripts:ro
-
-  # AI Forecast Generator (runs twice daily: 1 PM & 9 PM Palestine time = 11 AM & 7 PM UTC)
-  # Generates intelligence forecasts and trend analysis, caches for 8 hours
-  ai-forecast:
-    build:
-      context: .
-      dockerfile: Dockerfile
-    container_name: geonews-ai-forecast
-    restart: unless-stopped
-    environment:
-      DATABASE_URL: postgresql://${POSTGRES_USER:-geonews_user}:${POSTGRES_PASSWORD:-changeme}@postgres:5432/${POSTGRES_DB:-geonews_db}
-      OPENAI_API_KEY: ${OPENAI_API_KEY}
-      OPENAI_MODEL: ${OPENAI_MODEL:-gpt-4o}
-    command: >
-      sh -c "
-        while true; do
-          current_hour=$$(date -u +%H)
-          current_minute=$$(date -u +%M)
-          
-          # Run at 11:00 UTC (1 PM Palestine) and 19:00 UTC (9 PM Palestine)
-          if [ \"$$current_hour\" = \"11\" ] && [ \"$$current_minute\" -lt \"15\" ]; then
-            echo '[AI Forecast] Running 1 PM forecast at $$(date)'
-            python scripts/generate_ai_forecasts.py
-            echo '[AI Forecast] Completed. Sleeping until next run...'
-            sleep 3600
-          elif [ \"$$current_hour\" = \"19\" ] && [ \"$$current_minute\" -lt \"15\" ]; then
-            echo '[AI Forecast] Running 9 PM forecast at $$(date)'
-            python scripts/generate_ai_forecasts.py
-            echo '[AI Forecast] Completed. Sleeping until next run...'
-            sleep 3600
-          else
-            sleep 300
-          fi
-        done
-      "
-    depends_on:
-      postgres:
-        condition: service_healthy
-    networks:
-      - geonews-network
-    volumes:
-      - ./scripts:/app/scripts:ro
+  # Standalone Scheduler (Optional - uncomment to enable)
+  # scheduler:
+  #   build:
+  #     context: .
+  #     dockerfile: Dockerfile
+  #   container_name: geonews-scheduler
+  #   restart: unless-stopped
+  #   environment:
+  #     DATABASE_URL: ${DATABASE_URL}
+  #     OPENAI_API_KEY: ${OPENAI_API_KEY}
+  #     OPENAI_MODEL: ${OPENAI_MODEL}
+  #     NEWS_VIEW_NAME: ${NEWS_VIEW_NAME}
+  #     API_BASE_URL: http://backend:7235
+  #   command: python scripts/run_scheduler.py
+  #   depends_on:
+  #     - backend
+  #   networks:
+  #     - geonews-network
 
 networks:
   geonews-network:
     driver: bridge
-
-volumes:
-  postgres_data:
-    driver: local

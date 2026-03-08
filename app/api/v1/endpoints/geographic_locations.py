@@ -162,3 +162,70 @@ async def get_location_events(
         "limit": limit,
         "offset": offset
     }
+
+
+@router.get("/{location_id}/news")
+async def get_location_news(
+    location_id: int,
+    limit: int = Query(50, ge=1, le=200, description="Number of items"),
+    offset: int = Query(0, ge=0, description="Offset for pagination"),
+    pool: asyncpg.Pool = Depends(get_db_pool)
+):
+    """
+    Get all news articles related to a specific location (in Arabic)
+    
+    - **location_id**: The ID of the location
+    - **limit**: Number of items per page
+    - **offset**: Offset for pagination
+    """
+    
+    # Get total count
+    count_query = """
+        SELECT COUNT(DISTINCT rn.id)
+        FROM raw_news rn
+        JOIN news_events ne ON rn.id = ne.raw_news_id
+        LEFT JOIN translations t ON rn.id = t.raw_news_id AND t.language_id = 1
+        WHERE ne.location_id = $1
+        AND (rn.language_id = 1 OR t.language_id = 1)
+    """
+    
+    # Get news articles with Arabic content (original or translated)
+    news_query = """
+        SELECT DISTINCT
+            rn.id,
+            CASE 
+                WHEN rn.language_id = 1 THEN rn.title_original
+                ELSE COALESCE(t.title, rn.title_original)
+            END AS title,
+            CASE 
+                WHEN rn.language_id = 1 THEN LEFT(rn.content_original, 200)
+                ELSE LEFT(COALESCE(t.content, rn.content_original), 200)
+            END AS content_preview,
+            rn.url,
+            s.name as source_name,
+            'ar' as language_code,
+            COALESCE(rn.published_at, rn.fetched_at) as published_at,
+            (SELECT COUNT(*) FROM news_events ne WHERE ne.raw_news_id = rn.id) as events_count,
+            (SELECT COUNT(*) FROM event_metrics em 
+             JOIN news_events ne ON em.event_id = ne.id 
+             WHERE ne.raw_news_id = rn.id) as metrics_count
+        FROM raw_news rn
+        JOIN news_events ne ON rn.id = ne.raw_news_id
+        LEFT JOIN translations t ON rn.id = t.raw_news_id AND t.language_id = 1
+        LEFT JOIN sources s ON rn.source_id = s.id
+        WHERE ne.location_id = $1
+        AND (rn.language_id = 1 OR t.language_id = 1)
+        ORDER BY COALESCE(rn.published_at, rn.fetched_at) DESC NULLS LAST
+        LIMIT $2 OFFSET $3
+    """
+    
+    async with pool.acquire() as conn:
+        total = await conn.fetchval(count_query, location_id)
+        rows = await conn.fetch(news_query, location_id, limit, offset)
+    
+    return {
+        "items": [dict(row) for row in rows],
+        "total": total,
+        "limit": limit,
+        "offset": offset
+    }

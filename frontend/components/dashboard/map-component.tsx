@@ -18,9 +18,10 @@ L.Icon.Default.mergeOptions({
 interface MapComponentProps {
   locations: GeographicLocationListItem[];
   isLoading: boolean;
+  onLocationClick?: (location: GeographicLocationListItem) => void;
 }
 
-export default function MapComponent({ locations, isLoading }: MapComponentProps) {
+export default function MapComponent({ locations, isLoading, onLocationClick }: MapComponentProps) {
   const mapContainer = useRef<HTMLDivElement>(null);
   const map = useRef<L.Map | null>(null);
   const markers = useRef<L.Marker[]>([]);
@@ -157,6 +158,13 @@ export default function MapComponent({ locations, isLoading }: MapComponentProps
       // Open popup on hover
       marker.on('mouseover', function(this: L.Marker) {
         this.openPopup();
+      });
+
+      // Click to select location
+      marker.on('click', function(this: L.Marker) {
+        if (onLocationClick) {
+          onLocationClick(location);
+        }
       });
 
       markers.current.push(marker);

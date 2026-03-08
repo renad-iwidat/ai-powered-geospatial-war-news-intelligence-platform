@@ -28,6 +28,13 @@ export const fetchLocations = async () => {
   return response.data.items;
 };
 
+export const fetchNewsByLocation = async (locationId: number) => {
+  const response = await apiClient.get<{ items: NewsArticleListItem[] }>(
+    `/geographic-locations/${locationId}/news?limit=50`
+  );
+  return response.data.items || [];
+};
+
 // Analytics
 export const fetchAnalyticsOverview = async () => {
   const response = await apiClient.get<AnalyticsOverview>('/analytics/overview');

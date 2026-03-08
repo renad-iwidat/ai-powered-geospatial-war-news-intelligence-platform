@@ -59,24 +59,33 @@ async def get_news_articles_list(
     where_sql = "WHERE " + " AND ".join(where_clauses) if where_clauses else ""
     
     # Get total count
-    count_query = f"SELECT COUNT(*) FROM vw_news_ar_feed {where_sql}"
+    count_query = f"SELECT COUNT(*) FROM raw_news rn LEFT JOIN translations t ON rn.id = t.raw_news_id AND t.language_id = 1 WHERE (rn.language_id = 1 OR t.language_id = 1)"
     
     # Get paginated list
     list_query = f"""
         SELECT
-            raw_news_id as id,
-            title_ar as title,
-            LEFT(content_ar, 200) as content_preview,
-            url,
-            source_mode as source_name,
+            rn.id,
+            CASE 
+                WHEN rn.language_id = 1 THEN rn.title_original
+                ELSE COALESCE(t.title, rn.title_original)
+            END AS title,
+            CASE 
+                WHEN rn.language_id = 1 THEN LEFT(rn.content_original, 200)
+                ELSE LEFT(COALESCE(t.content, rn.content_original), 200)
+            END AS content_preview,
+            rn.url,
+            s.name as source_name,
             'ar' as language_code,
-            COALESCE(published_at, fetched_at) as published_at,
-            has_numbers,
-            events_count,
-            metrics_count
-        FROM vw_news_ar_feed
-        {where_sql}
-        ORDER BY COALESCE(published_at, fetched_at) DESC NULLS LAST
+            COALESCE(rn.published_at, rn.fetched_at) as published_at,
+            (SELECT COUNT(*) FROM news_events ne WHERE ne.raw_news_id = rn.id) as events_count,
+            (SELECT COUNT(*) FROM event_metrics em 
+             JOIN news_events ne ON em.event_id = ne.id 
+             WHERE ne.raw_news_id = rn.id) as metrics_count
+        FROM raw_news rn
+        LEFT JOIN translations t ON rn.id = t.raw_news_id AND t.language_id = 1
+        LEFT JOIN sources s ON rn.source_id = s.id
+        WHERE (rn.language_id = 1 OR t.language_id = 1)
+        ORDER BY COALESCE(rn.published_at, rn.fetched_at) DESC NULLS LAST
         LIMIT ${param_idx} OFFSET ${param_idx + 1}
     """
     params.extend([limit, offset])
@@ -109,17 +118,25 @@ async def get_news_article_detail(
     
     query = """
         SELECT
-            raw_news_id as id,
-            title_ar as title,
-            content_ar as content,
-            url,
-            source_mode as source_name,
+            rn.id,
+            CASE 
+                WHEN rn.language_id = 1 THEN rn.title_original
+                ELSE COALESCE(t.title, rn.title_original)
+            END AS title,
+            CASE 
+                WHEN rn.language_id = 1 THEN rn.content_original
+                ELSE COALESCE(t.content, rn.content_original)
+            END AS content,
+            rn.url,
+            s.name as source_name,
             'ar' as language_code,
-            published_at,
-            fetched_at,
-            has_numbers
-        FROM vw_news_ar_feed
-        WHERE raw_news_id = $1
+            rn.published_at,
+            rn.fetched_at
+        FROM raw_news rn
+        LEFT JOIN translations t ON rn.id = t.raw_news_id AND t.language_id = 1
+        LEFT JOIN sources s ON rn.source_id = s.id
+        WHERE rn.id = $1
+        AND (rn.language_id = 1 OR t.language_id = 1)
         LIMIT 1
     """
     

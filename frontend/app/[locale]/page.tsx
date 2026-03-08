@@ -51,11 +51,6 @@ function DashboardContent() {
 
       {/* Main Dashboard */}
       <main className="container mx-auto px-4 py-6 space-y-6">
-        {/* Top Section: Metrics Overview */}
-        <section>
-          <MetricsOverview />
-        </section>
-
         {/* Primary Intelligence Grid: Live Stream + Map */}
         <section className="grid grid-cols-1 lg:grid-cols-2 gap-6">
           {/* Live News Stream */}
@@ -86,18 +81,54 @@ function DashboardContent() {
         <section>
           <AnalyticsSection />
         </section>
+
+        {/* Bottom Section: Metrics Overview */}
+        <section>
+          <MetricsOverview />
+        </section>
       </main>
 
       {/* Footer */}
-      <footer className="border-t border-slate-800 bg-slate-900/50 backdrop-blur-sm mt-12">
-        <div className="container mx-auto px-4 py-6">
-          <div className="flex flex-col md:flex-row items-center justify-between gap-4 text-sm text-slate-400">
-            <div className="flex items-center gap-2">
-              <Shield className="h-4 w-4 text-red-500" />
-              <span className="font-semibold text-white">{t('title')}</span>
+      <footer className="border-t border-slate-800 bg-gradient-to-b from-slate-900/80 to-slate-950 backdrop-blur-sm mt-16">
+        <div className="container mx-auto px-4 py-12">
+          {/* About Section */}
+          <div className="mb-10">
+            <div className="flex items-center gap-3 mb-6">
+              <div className="p-2 bg-red-500/10 rounded-lg border border-red-500/20">
+                <Shield className="h-5 w-5 text-red-500" />
+              </div>
+              <h2 className="text-lg font-bold text-white">{t('title')}</h2>
             </div>
-            <div className="text-xs text-slate-400 text-center">
-              {t('footer')}
+            <p className="text-sm text-slate-300 leading-relaxed max-w-4xl">
+              تم إنشاء هذا الموقع بالتعاون بين <span className="text-red-400 font-semibold">وحدة ليمينال (Liminal)</span> للحلول الرقمية الذكية و <span className="text-red-400 font-semibold">مركز الذكاء الاصطناعي</span> في <span className="text-red-400 font-semibold">جامعة النجاح الوطنية</span>، بهدف تطوير منصة رقمية تعتمد على تقنيات الذكاء الاصطناعي لجمع وتحليل وعرض المعلومات بشكل تفاعلي.
+            </p>
+          </div>
+
+          {/* Divider */}
+          <div className="border-t border-slate-700/50 my-8"></div>
+
+          {/* Disclaimer Section */}
+          <div className="mb-10">
+            <div className="flex items-center gap-2 mb-4">
+              <div className="w-1 h-6 bg-red-500 rounded-full"></div>
+              <h3 className="text-sm font-bold text-red-400 uppercase tracking-wider">إخلاء مسؤولية</h3>
+            </div>
+            <p className="text-xs text-slate-400 leading-relaxed max-w-4xl">
+              تعتمد المعلومات المعروضة في هذا الموقع جزئياً على تقنيات الذكاء الاصطناعي في جمع البيانات وتحليلها من مصادر متعددة. ولذلك فإن <span className="text-slate-300 font-semibold">جامعة النجاح الوطنية</span> و <span className="text-slate-300 font-semibold">مركز الذكاء الاصطناعي</span> و <span className="text-slate-300 font-semibold">وحدة ليمينال (Liminal)</span> للحلول الرقمية الذكية <span className="text-red-400">لا يتحملون أي مسؤولية</span> عن دقة أو اكتمال هذه المعلومات، وهي معروضة لأغراض إعلامية و تحليلية عامة فقط.
+            </p>
+          </div>
+
+          {/* Divider */}
+          <div className="border-t border-slate-700/50 my-8"></div>
+
+          {/* Bottom Footer */}
+          <div className="flex flex-col md:flex-row items-center justify-between gap-4 text-xs text-slate-500">
+            <div className="flex items-center gap-2">
+              <span className="inline-block w-2 h-2 bg-red-500 rounded-full"></span>
+              <span>© 2026 GeoNews AI Platform</span>
+            </div>
+            <div className="text-center md:text-right">
+              <p>جيونيوز AI - منصة الاستخبارات الجغرافية</p>
             </div>
           </div>
         </div>

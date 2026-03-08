@@ -37,8 +37,19 @@ async def extract_locations_from_news(
     4. Stores locations and creates events
     """
     
-    result = await process_locations(pool, batch_size=request.batch_size)
-    return LocationExtractionResponse(**result)
+    try:
+        result = await process_locations(pool, batch_size=request.batch_size)
+        return LocationExtractionResponse(**result)
+    except Exception as e:
+        import logging
+        logging.error(f"Error in extract_locations: {str(e)}", exc_info=True)
+        # Return empty result instead of 500 error
+        return LocationExtractionResponse(
+            processed_news=0,
+            places_detected=0,
+            locations_upserted=0,
+            events_created=0
+        )
 
 
 @router.post("/extract-metrics", response_model=MetricsExtractionResponse)
@@ -57,8 +68,17 @@ async def extract_metrics_from_events(
     3. Stores metrics in database
     """
     
-    result = await process_metrics(pool, batch_size=request.batch_size)
-    return MetricsExtractionResponse(**result)
+    try:
+        result = await process_metrics(pool, batch_size=request.batch_size)
+        return MetricsExtractionResponse(**result)
+    except Exception as e:
+        import logging
+        logging.error(f"Error in extract_metrics: {str(e)}", exc_info=True)
+        # Return empty result instead of 500 error
+        return MetricsExtractionResponse(
+            events_processed=0,
+            metrics_extracted=0
+        )
 
 
 

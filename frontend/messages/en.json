@@ -45,5 +45,10 @@
     "title": "Live News Coverage",
     "live": "LIVE",
     "source": "Al Jazeera"
+  },
+  "footer": {
+    "about": "This website was created in collaboration between the Liminal Unit for Smart Digital Solutions and the Artificial Intelligence Center at An-Najah National University, with the aim of developing a digital platform based on artificial intelligence technologies to collect, analyze, and present information interactively.",
+    "disclaimer": "Disclaimer",
+    "disclaimerText": "The information displayed on this website is partially based on artificial intelligence technologies for data collection and analysis from multiple sources. Therefore, An-Najah National University, the Artificial Intelligence Center, and the Liminal Unit for Smart Digital Solutions are not responsible for the accuracy or completeness of this information, which is presented for general informational and analytical purposes only."
   }
 }

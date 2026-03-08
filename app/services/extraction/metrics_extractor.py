@@ -269,39 +269,49 @@ def extract_metrics(text: str):
     if not text:
         return metrics
 
-    # Normalize text
-    text = text.replace("أ", "ا").replace("إ", "ا").replace("آ", "ا")
-    
-    # Convert Arabic number words to digits
-    text = convert_arabic_number_words(text)
-    
-    # Split text into sentences for better accuracy
-    sentences = re.split(r"[\.!\؟\n]", text)
+    try:
+        # Normalize text
+        text = text.replace("أ", "ا").replace("إ", "ا").replace("آ", "ا")
+        
+        # Convert Arabic number words to digits
+        text = convert_arabic_number_words(text)
+        
+        # Split text into sentences for better accuracy
+        sentences = re.split(r"[\.!\؟\n]", text)
 
-    for sentence in sentences:
-        sentence = sentence.strip()
-        if len(sentence) < 10:  # Skip very short sentences
-            continue
-            
-        # Try each pattern against the sentence
-        for metric_type, pattern in PATTERNS:
-            matches = re.findall(pattern, sentence, re.IGNORECASE)
-
-            for m in matches:
+        for sentence in sentences:
+            sentence = sentence.strip()
+            if len(sentence) < 10:  # Skip very short sentences
+                continue
+                
+            # Try each pattern against the sentence
+            for metric_type, pattern in PATTERNS:
                 try:
-                    value = int(m)
-                    
-                    # Skip unrealistic values
-                    if value <= 0 or value > 100000:
-                        continue
-                    
-                    metrics.append({
-                        "metric_type": metric_type,
-                        "value": value,
-                        "snippet": sentence[:200]  # Limit snippet length
-                    })
-                    
-                except (ValueError, TypeError):
+                    matches = re.findall(pattern, sentence, re.IGNORECASE)
+
+                    for m in matches:
+                        try:
+                            value = int(m)
+                            
+                            # Skip unrealistic values
+                            if value <= 0 or value > 100000:
+                                continue
+                            
+                            metrics.append({
+                                "metric_type": metric_type,
+                                "value": value,
+                                "snippet": sentence[:200]  # Limit snippet length
+                            })
+                            
+                        except (ValueError, TypeError):
+                            continue
+                except Exception:
+                    # Skip problematic patterns
                     continue
+    except Exception as e:
+        # If anything goes wrong, return empty list
+        import logging
+        logging.error(f"Error extracting metrics: {str(e)}")
+        return []
 
     return metrics

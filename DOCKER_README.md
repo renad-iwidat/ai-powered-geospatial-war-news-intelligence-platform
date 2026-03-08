@@ -1,205 +1,218 @@
 # GeoNews AI - Docker Setup
 
-## 🚀 تشغيل المشروع (3 خطوات)
+## 🎯 Architecture
 
-### 1. إعداد البيئة
-```bash
-# انسخ ملف البيئة
-cp .env.docker .env
-
-# عدل الملف وحط API keys تبعك
-nano .env
+```
+docker-compose up -d
+    ↓
+┌─────────────────────────────────────┐
+│   Backend Container (port 7235)     │
+├─────────────────────────────────────┤
+│  • FastAPI Server (API)             │
+│  • Background Scheduler             │
+│    - Data Processing (15 min)       │
+│    - AI Forecast (10 hours)         │
+└─────────────────────────────────────┘
+         ↑                    ↓
+         │              Database (Render)
+         │
+┌─────────────────────────────────────┐
+│   Frontend Container (port 3001)    │
+├─────────────────────────────────────┤
+│  • Next.js Application              │
+│  • Calls Backend API                │
+└─────────────────────────────────────┘
 ```
 
-### 2. شغل كل شي
-```bash
-# بناء الصور
-docker-compose build
+## 🚀 Quick Start
 
-# تشغيل الخدمات
-docker-compose up -d
+### 1. Setup Environment
+```bash
+# Copy example env
+cp .env.example .env
+
+# Edit .env with your values:
+# - DATABASE_URL (from Render)
+# - OPENAI_API_KEY
 ```
 
-### 3. الوصول للتطبيق
-- **الفرونت**: http://localhost:3000
-- **الباك إند**: http://localhost:8000
-- **API Docs**: http://localhost:8000/docs
-
----
-
-## 📦 الخدمات المتوفرة
-
-| الخدمة | البورت | الوصف |
-|--------|--------|-------|
-| Frontend | 3000 | واجهة Next.js |
-| Backend | 8000 | API FastAPI |
-| PostgreSQL | 5432 | قاعدة البيانات |
-| Processor | - | معالجة البيانات كل 15 دقيقة (NER + Geocoding + Metrics) |
-
----
-
-## 🛠️ الأوامر الأساسية
-
-### تشغيل وإيقاف
+### 2. Start Services
 ```bash
-# تشغيل كل الخدمات
+# Build and start all services
 docker-compose up -d
 
-# إيقاف كل الخدمات
-docker-compose down
-
-# إعادة تشغيل
-docker-compose restart
-
-# عرض الخدمات الشغالة
+# Check status
 docker-compose ps
 ```
 
-### عرض اللوجات
+### 3. Access Application
+- **Frontend**: http://localhost:3001
+- **Backend API**: http://localhost:7235
+- **API Docs**: http://localhost:7235/docs
+
+## 📊 What's Running
+
+### Backend Container
+- **API Server**: FastAPI on port 7235
+- **Scheduler**: Integrated, runs automatically
+  - Data Processing: Every 15 minutes
+  - AI Forecast: Every 10 hours
+
+### Frontend Container
+- **Web App**: Next.js on port 3001
+- **Calls**: Backend API at http://backend:7235
+
+### Database
+- **Location**: Render (external)
+- **Connection**: Via DATABASE_URL env variable
+
+## 🔧 Configuration
+
+### Environment Variables (.env)
 ```bash
-# كل الخدمات
+# Database (from Render)
+DATABASE_URL=postgresql://...
+
+# API Keys
+OPENAI_API_KEY=sk-...
+OPENAI_MODEL=gpt-4o
+
+# Ports
+BACKEND_PORT=7235
+FRONTEND_PORT=3001
+
+# CORS
+CORS_ORIGINS=http://localhost:3001,http://frontend:3001
+
+# Scheduler
+API_BASE_URL=http://backend:7235
+```
+
+## 📝 Common Commands
+
+### View Logs
+```bash
+# All services
 docker-compose logs -f
 
-# خدمة معينة
+# Specific service
 docker-compose logs -f backend
 docker-compose logs -f frontend
-docker-compose logs -f processor
+
+# Follow scheduler jobs
+docker-compose logs -f backend | grep "🔄\|✅\|❌"
 ```
 
-### التحكم بالـ Processor
+### Stop Services
 ```bash
-# إيقاف
-docker-compose stop processor
-
-# تشغيل
-docker-compose start processor
-
-# عرض اللوجات
-docker-compose logs -f processor
-```
-
-### قاعدة البيانات
-```bash
-# فتح PostgreSQL shell
-docker-compose exec postgres psql -U geonews_user -d geonews_db
-
-# عمل backup
-docker-compose exec postgres pg_dump -U geonews_user geonews_db > backup.sql
-
-# استرجاع backup
-docker-compose exec -T postgres psql -U geonews_user -d geonews_db < backup.sql
-```
-
-### التنظيف
-```bash
-# حذف كل شي (Containers + Volumes + Images)
-docker-compose down -v --rmi all
-
-# حذف Volumes بس
-docker-compose down -v
-
-# إعادة بناء من الصفر
 docker-compose down
+```
+
+### Restart Services
+```bash
+docker-compose restart
+```
+
+### Rebuild Images
+```bash
 docker-compose build --no-cache
 docker-compose up -d
 ```
 
----
+## 🧪 Testing
 
-## ⚙️ تعديل الإعدادات
-
-### تغيير وقت الـ Processor
-
-عدل `docker-compose.yml`:
-```yaml
-processor:
-  command: >
-    sh -c "
-      while true; do
-        python scripts/process_all_data.py
-        sleep 900  # 900 = 15 دقيقة
-      done
-    "
-```
-
----
-
-## 🐛 حل المشاكل
-
-### الخدمة ما بتشتغل؟
+### Test Backend Health
 ```bash
-# شوف اللوجات
-docker-compose logs backend
-
-# أعد تشغيل
-docker-compose restart backend
+curl http://localhost:7235/health
 ```
 
-### مشكلة بقاعدة البيانات؟
+### Test Frontend
 ```bash
-# تحقق من حالة قاعدة البيانات
-docker-compose exec postgres pg_isready -U geonews_user
-
-# أعد تشغيل قاعدة البيانات
-docker-compose restart postgres
+curl http://localhost:3001
 ```
 
-### مساحة ممتلئة؟
+### Test API Endpoint
 ```bash
-# نظف الصور والـ containers القديمة
-docker system prune -a
-
-# نظف الـ volumes
-docker volume prune
+curl http://localhost:7235/api/v1/analytics/statistics
 ```
 
----
+## 📋 Scheduler Jobs
 
-## 📝 متغيرات البيئة (.env)
+### Data Processing (Every 15 minutes)
+- Extracts locations from news articles
+- Extracts metrics from events
 
-```env
-# قاعدة البيانات
-POSTGRES_DB=geonews_db
-POSTGRES_USER=geonews_user
-POSTGRES_PASSWORD=your_password_here
+### AI Forecast (Every 10 hours)
+- Generates intelligence forecast
+- Generates trend analysis
 
-# API Keys
-OPENAI_API_KEY=sk-your-key-here
-ALPHA_VANTAGE_API_KEY=your-key-here
-
-# CORS
-CORS_ORIGINS=http://localhost:3000,http://frontend:3000
-
-# Frontend
-NEXT_PUBLIC_API_URL=http://localhost:8000
+**View job execution in logs:**
+```bash
+docker-compose logs -f backend
 ```
 
----
+## 🛠️ Troubleshooting
 
-## ✅ التحقق من الصحة
+### Services won't start
+```bash
+# Check logs
+docker-compose logs
+
+# Rebuild
+docker-compose build --no-cache
+docker-compose up -d
+```
+
+### Database connection fails
+- Verify DATABASE_URL is correct
+- Check Render database is accessible
+- Ensure firewall allows connection
+
+### Frontend can't reach backend
+- Check backend is running: `docker-compose ps`
+- Check logs: `docker-compose logs backend`
+- Verify NEXT_PUBLIC_API_URL is set
+
+### Port conflicts
+```bash
+# Change ports in .env
+BACKEND_PORT=7236
+FRONTEND_PORT=3002
+
+# Restart
+docker-compose down
+docker-compose up -d
+```
+
+## 📚 Documentation
+
+- **DOCKER_SETUP.md** - Comprehensive setup guide
+- **DOCKER_QUICKSTART.md** - Quick start guide
+- **SCHEDULER_DOCKER_GUIDE.md** - Scheduler configuration
+- **DOCKER_VERIFICATION.md** - Verification checklist
+
+## ✅ Checklist
+
+Before running `docker-compose up -d`:
+
+- [ ] .env file created and configured
+- [ ] DATABASE_URL is correct
+- [ ] OPENAI_API_KEY is set
+- [ ] Ports 7235 and 3001 are available
+- [ ] Docker and Docker Compose installed
+
+## 🎉 Ready to Go!
 
 ```bash
-# تحقق من صحة الباك إند
-curl http://localhost:8000/health
-
-# تحقق من صحة قاعدة البيانات
-docker-compose exec postgres pg_isready -U geonews_user
-
-# شوف استخدام الموارد
-docker stats
+docker-compose up -d
 ```
 
----
+Everything will start automatically:
+- Backend API + Scheduler
+- Frontend
+- All connections configured
 
-## 🎉 خلص!
-
-المنصة الآن شغالة مع:
-- ✅ معالجة بيانات تلقائية كل 15 دقيقة (NER + Geocoding + Metrics)
-- ✅ API شغال
-- ✅ واجهة تفاعلية
-- ✅ قاعدة بيانات دائمة
-
----
-
-**محتاج مساعدة؟** شوف اللوجات: `docker-compose logs -f`
-
+Monitor with:
+```bash
+docker-compose logs -f
+```

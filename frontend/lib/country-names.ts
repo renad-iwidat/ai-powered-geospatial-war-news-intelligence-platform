@@ -6,7 +6,7 @@
 export const countryNames: Record<string, { en: string; ar: string }> = {
   // Middle East
   PS: { en: 'Palestine', ar: 'فلسطين' },
-  IL: { en: 'Israel', ar: 'إسرائيل' },
+  IL: { en: 'Occupied Palestinian Territory', ar: 'الكيان المحتل' },
   LB: { en: 'Lebanon', ar: 'لبنان' },
   SY: { en: 'Syria', ar: 'سوريا' },
   JO: { en: 'Jordan', ar: 'الأردن' },

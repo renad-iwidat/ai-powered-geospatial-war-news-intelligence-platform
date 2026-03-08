@@ -10,6 +10,7 @@ from app.core.config import settings
 from app.core.database import db_manager
 from app.core.logging import setup_logging
 from app.api.v1.router import api_router
+from app.services.scheduler import start_scheduler, stop_scheduler
 
 # Setup logging
 setup_logging()
@@ -44,6 +45,7 @@ app = FastAPI(
 )
 
 # CORS Middleware
+print(f"🔐 CORS Origins: {settings.CORS_ORIGINS}")
 app.add_middleware(
     CORSMiddleware,
     allow_origins=settings.CORS_ORIGINS,
@@ -61,12 +63,26 @@ app.include_router(api_router, prefix=settings.API_V1_PREFIX)
 async def startup_event():
     """Initialize resources on application startup"""
     await db_manager.connect()
+    
+    # Start background scheduler
+    try:
+        import os
+        api_base_url = os.getenv("API_BASE_URL", "http://localhost:7235")
+        start_scheduler(api_base_url=api_base_url)
+    except Exception as e:
+        print(f"⚠️  Failed to start scheduler: {str(e)}")
 
 
 @app.on_event("shutdown")
 async def shutdown_event():
     """Cleanup resources on application shutdown"""
     await db_manager.disconnect()
+    
+    # Stop background scheduler
+    try:
+        stop_scheduler()
+    except Exception as e:
+        print(f"⚠️  Failed to stop scheduler: {str(e)}")
 
 
 # Health Check

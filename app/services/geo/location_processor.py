@@ -17,7 +17,7 @@ import asyncpg
 import re
 from typing import Dict, Optional
 
-from ..nlp.ner_camel import extract_places_ner
+from ..nlp.ner_simple import extract_places_simple
 from .geocoder_geopy import get_geocoder
 
 
@@ -313,7 +313,13 @@ async def process_locations(
         # ============================================================================
         # Step 3: Extract Places Using NER
         # ============================================================================
-        places = extract_places_ner(text)
+        try:
+            places = extract_places_simple(text)
+        except Exception as e:
+            import logging
+            logging.error(f"Error extracting places from news {raw_news_id}: {str(e)}")
+            places = []
+        
         if not places:
             continue
 

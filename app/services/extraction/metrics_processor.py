@@ -35,30 +35,38 @@ async def process_metrics(pool: asyncpg.Pool, batch_size: int = 20):
     # Fetch Unprocessed Articles with Content
     # ========================================================================
 
-    async with pool.acquire() as conn:
-        rows = await conn.fetch(
-            """
-            SELECT
-                ne.id AS event_id,
-                ne.place_name,
-                COALESCE(t.content, rn.content_original) AS content
-            FROM news_events ne
-            JOIN raw_news rn ON rn.id = ne.raw_news_id
-            LEFT JOIN translations t ON t.raw_news_id = rn.id
-            WHERE rn.has_numbers = true
-            AND (
-                (t.content IS NOT NULL AND LENGTH(t.content) > 50)
-                OR (rn.content_original IS NOT NULL AND LENGTH(rn.content_original) > 50)
+    try:
+        async with pool.acquire() as conn:
+            rows = await conn.fetch(
+                """
+                SELECT
+                    ne.id AS event_id,
+                    ne.place_name,
+                    COALESCE(t.content, rn.content_original) AS content
+                FROM news_events ne
+                JOIN raw_news rn ON rn.id = ne.raw_news_id
+                LEFT JOIN translations t ON t.raw_news_id = rn.id
+                WHERE rn.has_numbers = true
+                AND (
+                    (t.content IS NOT NULL AND LENGTH(t.content) > 50)
+                    OR (rn.content_original IS NOT NULL AND LENGTH(rn.content_original) > 50)
+                )
+                AND NOT EXISTS (
+                    SELECT 1
+                    FROM event_metrics em
+                    WHERE em.event_id = ne.id
+                )
+                LIMIT $1;
+                """,
+                batch_size,
             )
-            AND NOT EXISTS (
-                SELECT 1
-                FROM event_metrics em
-                WHERE em.event_id = ne.id
-            )
-            LIMIT $1;
-            """,
-            batch_size,
-        )
+    except Exception as e:
+        import logging
+        logging.error(f"Error fetching events for metrics processing: {str(e)}")
+        return {
+            "processed_events": 0,
+            "metrics_created": 0,
+        }
 
     processed = 0
     metrics_created = 0
@@ -74,7 +82,12 @@ async def process_metrics(pool: asyncpg.Pool, batch_size: int = 20):
         text = r["content"] or ""
 
         # Extract metrics from the entire content
-        metrics = extract_metrics(text)
+        try:
+            metrics = extract_metrics(text)
+        except Exception as e:
+            import logging
+            logging.error(f"Error extracting metrics from event {event_id}: {str(e)}")
+            metrics = []
 
         if not metrics:
             continue
