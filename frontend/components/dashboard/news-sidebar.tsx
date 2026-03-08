@@ -66,9 +66,9 @@ export function NewsSidebar() {
                   <h3 className="font-semibold text-sm mb-2 line-clamp-2 text-white group-hover:text-red-400 transition-colors">
                     {article.title}
                   </h3>
-                  {article.content_preview && (
-                    <p className="text-xs text-slate-400 mb-2 line-clamp-2">
-                      {article.content_preview}
+                  {article.content && (
+                    <p className="text-xs text-slate-400 mb-2 line-clamp-3">
+                      {article.content}
                     </p>
                   )}
                   <div className="flex flex-wrap gap-2 items-center text-xs text-slate-500">

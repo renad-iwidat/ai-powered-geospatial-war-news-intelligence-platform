@@ -73,6 +73,10 @@ async def get_news_articles_list(
                 WHEN rn.language_id = 1 THEN LEFT(rn.content_original, 200)
                 ELSE LEFT(COALESCE(t.content, rn.content_original), 200)
             END AS content_preview,
+            CASE 
+                WHEN rn.language_id = 1 THEN rn.content_original
+                ELSE COALESCE(t.content, rn.content_original)
+            END AS content,
             rn.url,
             s.name as source_name,
             'ar' as language_code,
@@ -80,7 +84,8 @@ async def get_news_articles_list(
             (SELECT COUNT(*) FROM news_events ne WHERE ne.raw_news_id = rn.id) as events_count,
             (SELECT COUNT(*) FROM event_metrics em 
              JOIN news_events ne ON em.event_id = ne.id 
-             WHERE ne.raw_news_id = rn.id) as metrics_count
+             WHERE ne.raw_news_id = rn.id) as metrics_count,
+            false as has_numbers
         FROM raw_news rn
         LEFT JOIN translations t ON rn.id = t.raw_news_id AND t.language_id = 1
         LEFT JOIN sources s ON rn.source_id = s.id

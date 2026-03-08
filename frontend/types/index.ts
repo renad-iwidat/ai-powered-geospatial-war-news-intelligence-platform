@@ -7,6 +7,7 @@ export interface NewsArticleListItem {
   id: number;
   title: string;
   content_preview: string | null;
+  content: string | null;
   url: string;
   source_name: string | null;
   language_code: string;
