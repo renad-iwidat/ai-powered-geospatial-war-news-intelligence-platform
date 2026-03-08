@@ -1,4 +1,5 @@
-# Dockerfile for GeoNews AI Backend
+# Dockerfile for GeoNews AI Scheduler
+# Runs only Data Processing and AI Analysis tasks
 FROM python:3.11-slim
 
 # Set working directory
@@ -55,12 +56,5 @@ RUN useradd -m -u 1000 appuser && \
 
 USER appuser
 
-# Expose port
-EXPOSE 7235
-
-# Health check
-HEALTHCHECK --interval=30s --timeout=10s --start-period=5s --retries=3 \
-    CMD curl -f http://localhost:7235/health || exit 1
-
-# Run the application
-CMD uvicorn app.main:app --host 0.0.0.0 --port 7235
+# Run the scheduler
+CMD python scripts/run_scheduler.py

@@ -1,0 +1,54 @@
+# Docker Compose for GeoNews AI Scheduler Only
+# Runs Data Processing and AI Analysis tasks
+# Requires Backend API to be running
+version: '3.8'
+
+services:
+  # Scheduler Service (Data Processing + AI Analysis)
+  scheduler:
+    build:
+      context: .
+      dockerfile: Dockerfile.scheduler
+    container_name: geonews-scheduler
+    restart: unless-stopped
+    environment:
+      DATABASE_URL: ${DATABASE_URL}
+      OPENAI_API_KEY: ${OPENAI_API_KEY}
+      OPENAI_MODEL: ${OPENAI_MODEL}
+      NEWS_VIEW_NAME: ${NEWS_VIEW_NAME}
+      API_BASE_URL: ${API_BASE_URL}
+    depends_on:
+      - backend
+    networks:
+      - geonews-network
+
+  # Backend API (required for scheduler to call)
+  backend:
+    build:
+      context: .
+      dockerfile: Dockerfile
+    container_name: geonews-backend
+    restart: unless-stopped
+    environment:
+      DATABASE_URL: ${DATABASE_URL}
+      OPENAI_API_KEY: ${OPENAI_API_KEY}
+      OPENAI_MODEL: ${OPENAI_MODEL}
+      NEWS_VIEW_NAME: ${NEWS_VIEW_NAME}
+      CORS_ORIGINS_STR: ${CORS_ORIGINS_STR}
+    ports:
+      - "${BACKEND_PORT}:7235"
+    healthcheck:
+      test: ["CMD", "curl", "-f", "http://localhost:7235/health"]
+      interval: 30s
+      timeout: 10s
+      retries: 3
+      start_period: 40s
+    networks:
+      - geonews-network
+    volumes:
+      - ./app:/app/app:ro
+      - ./scripts:/app/scripts:ro
+
+networks:
+  geonews-network:
+    driver: bridge

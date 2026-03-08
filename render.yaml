@@ -1,0 +1,50 @@
+services:
+  # Backend API Service
+  - type: web
+    name: geonews-backend
+    env: docker
+    dockerfilePath: ./Dockerfile
+    dockerContext: ./
+    plan: pro
+    region: oregon
+    envVars:
+      - key: DATABASE_URL
+        scope: build,runtime
+        sync: false
+      - key: OPENAI_API_KEY
+        scope: build,runtime
+        sync: false
+      - key: OPENAI_MODEL
+        value: gpt-4o
+      - key: NEWS_VIEW_NAME
+        value: vw_news_ar_feed
+      - key: CORS_ORIGINS_STR
+        value: http://localhost:3001,https://your-frontend.vercel.app
+    healthCheckPath: /health
+    healthCheckInterval: 30
+    healthCheckTimeout: 10
+    healthCheckStartPeriod: 40
+    autoDeploy: true
+
+  # Scheduler Background Worker
+  - type: background_worker
+    name: geonews-scheduler
+    env: docker
+    dockerfilePath: ./Dockerfile.scheduler
+    dockerContext: ./
+    plan: pro
+    region: oregon
+    envVars:
+      - key: DATABASE_URL
+        scope: build,runtime
+        sync: false
+      - key: OPENAI_API_KEY
+        scope: build,runtime
+        sync: false
+      - key: OPENAI_MODEL
+        value: gpt-4o
+      - key: NEWS_VIEW_NAME
+        value: vw_news_ar_feed
+      - key: API_BASE_URL
+        value: https://geonews-backend.onrender.com
+    autoDeploy: true
