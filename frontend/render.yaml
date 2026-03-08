@@ -1,0 +1,13 @@
+services:
+  - type: web
+    name: geonews-frontend
+    env: node
+    region: oregon
+    plan: starter
+    buildCommand: npm run build
+    startCommand: npm start
+    envVars:
+      - key: NEXT_PUBLIC_API_URL
+        value: https://geonews-backend.onrender.com
+      - key: NODE_ENV
+        value: production
