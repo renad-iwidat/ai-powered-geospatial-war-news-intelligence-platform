@@ -21,8 +21,10 @@ RUN apt-get update && apt-get install -y \
 # Copy requirements first (for better caching)
 COPY requirements.txt .
 
-# Install Python dependencies
-RUN pip install --no-cache-dir -r requirements.txt
+# Install Python dependencies with optimization
+RUN pip install --no-cache-dir -r requirements.txt && \
+    find /usr/local/lib/python3.11/site-packages -type d -name "__pycache__" -exec rm -rf {} + 2>/dev/null || true && \
+    find /usr/local/lib/python3.11/site-packages -type f -name "*.pyc" -delete
 
 # Download CAMeL Tools NER model
 # This is required for Arabic NER functionality
@@ -53,7 +55,7 @@ RUN useradd -m -u 1000 appuser && \
 
 USER appuser
 
-# Expose port (will be overridden by docker-compose)
+# Expose port
 EXPOSE 7235
 
 # Health check
