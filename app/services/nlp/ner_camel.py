@@ -5,6 +5,7 @@ Falls back to simple NER if model is not available
 """
 
 import re
+import os
 from typing import List
 from camel_tools.ner import NERecognizer
 
@@ -20,8 +21,22 @@ def get_ner():
     global _ner, _ner_available
     if _ner is None:
         try:
-            _ner = NERecognizer.pretrained()
-            _ner_available = True
+            import logging
+            
+            # Try local path first (pre-downloaded during Docker build)
+            local_model_path = os.path.expanduser('~/.camel_tools/data/ner/arabert')
+            
+            if os.path.exists(local_model_path):
+                # Load from local path (fast - no download needed)
+                logging.info(f"Loading CAMeL NER from local cache: {local_model_path}")
+                _ner = NERecognizer(local_model_path)
+                _ner_available = True
+            else:
+                # Fallback: try to load pretrained (will download if needed)
+                logging.info("Loading CAMeL NER from Hugging Face Hub...")
+                _ner = NERecognizer.pretrained()
+                _ner_available = True
+                logging.info("Model loaded successfully")
         except Exception as e:
             import logging
             logging.warning(f"CAMeL NER model not available: {str(e)}")

@@ -54,18 +54,21 @@ while retry_count < max_retries and not success:
     print(f"\n📥 Attempt {retry_count}/{max_retries}...")
     
     try:
-        from camel_tools.ner import NERecognizer
-        print("   ✓ Importing CAMeL Tools NER...")
+        from transformers import AutoTokenizer, AutoModelForTokenClassification
+        print("   ✓ Importing transformers...")
         
-        print("   ✓ Loading pretrained model...")
-        recognizer = NERecognizer.pretrained()
+        print("   ✓ Loading AraBERT NER model from Hugging Face...")
+        model_name = "CAMeL-Lab/bert-base-arabic-camelbert-msa-ner"
+        tokenizer = AutoTokenizer.from_pretrained(model_name)
+        model = AutoModelForTokenClassification.from_pretrained(model_name)
         
-        print("   ✓ Testing model...")
-        # Test the model with a simple sentence
-        test_result = recognizer.predict_sentence("هذا اختبار".split())
+        # Save locally for faster loading
+        model.save_pretrained(f"{camel_data_dir}/arabert")
+        tokenizer.save_pretrained(f"{camel_data_dir}/arabert")
         
+        print("   ✓ Model saved locally")
         print("=" * 70)
-        print("✅ CAMeL NER model loaded successfully!")
+        print("✅ CAMeL NER model downloaded and cached successfully!")
         print("=" * 70)
         success = True
         
@@ -78,9 +81,9 @@ while retry_count < max_retries and not success:
             print(f"   ⏳ Waiting {wait_time}s before retry...")
             time.sleep(wait_time)
         else:
-            print(f"\n⚠️  Failed to load CAMeL NER model after {max_retries} attempts")
+            print(f"\n⚠️  Failed to download NER model after {max_retries} attempts")
             print("   System will use simple NER fallback")
-            print("   Note: Accuracy will be lower without CAMeL model")
+            print("   Note: Accuracy will be lower without NER model")
 
 print("\n" + "=" * 70)
 print("✅ Docker build completed successfully")
