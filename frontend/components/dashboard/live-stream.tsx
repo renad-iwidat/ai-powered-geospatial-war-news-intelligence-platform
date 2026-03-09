@@ -27,8 +27,8 @@ export function LiveStream() {
         <div className="relative w-full" style={{ paddingBottom: '56.25%' }}>
           <iframe
             className="absolute top-0 left-0 w-full h-full"
-            src="https://www.youtube.com/embed/live_stream_id?autoplay=1&mute=1&controls=1&modestbranding=1&rel=0"
-            title={locale === 'ar' ? 'البث المباشر - الشرق' : 'Live Stream - Al Sharq'}
+            src="https://www.youtube.com/embed/rvJOGTSQNj8?autoplay=1&mute=1&controls=1&modestbranding=1&rel=0"
+            title={locale === 'ar' ? 'البث المباشر - الجزيرة' : 'Live Stream - Al Jazeera'}
             allow="accelerometer; autoplay; clipboard-write; encrypted-media; gyroscope; picture-in-picture"
             allowFullScreen
             style={{
@@ -40,8 +40,8 @@ export function LiveStream() {
         <div className="p-3 bg-slate-900/50 border-t border-slate-700">
           <p className="text-xs text-slate-400 text-center">
             {locale === 'ar' 
-              ? '📡 البث المباشر من قناة الشرق - تغطية مستمرة للأحداث'
-              : '📡 Live from Al Sharq - Continuous Event Coverage'
+              ? '📡 البث المباشر من قناة الجزيرة - تغطية مستمرة للأحداث'
+              : '📡 Live from Al Jazeera - Continuous Event Coverage'
             }
           </p>
         </div>

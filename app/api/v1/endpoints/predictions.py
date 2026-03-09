@@ -4,7 +4,7 @@ AI-powered predictions based on historical data
 """
 
 from fastapi import APIRouter, Query, Depends, HTTPException
-from datetime import date, timedelta, datetime
+from datetime import date, timedelta, datetime, timezone
 import asyncpg
 import logging
 import json
@@ -470,6 +470,36 @@ async def ai_intelligence_forecast(
         raise
     except Exception as e:
         logger.error(f"Error in AI intelligence forecast: {str(e)}")
+        
+        # If OpenAI fails, try to return any cached forecast (even if expired)
+        try:
+            query = """
+                SELECT forecast_data, generated_at, valid_until
+                FROM ai_forecasts
+                WHERE forecast_type = 'intelligence_forecast'
+                ORDER BY generated_at DESC
+                LIMIT 1
+            """
+            async with pool.acquire() as conn:
+                row = await conn.fetchrow(query)
+            
+            if row:
+                forecast_data = json.loads(row['forecast_data']) if isinstance(row['forecast_data'], str) else row['forecast_data']
+                forecast_data['cache_info'] = {
+                    'cached': True,
+                    'generated_at': row['generated_at'].isoformat(),
+                    'valid_until': row['valid_until'].isoformat(),
+                    'expired': row['valid_until'] <= datetime.now(timezone.utc),
+                    'note': {
+                        'en': 'Cached forecast (may be expired). AI service temporarily unavailable.',
+                        'ar': 'توقع محفوظ (قد يكون منتهي الصلاحية). خدمة الذكاء الاصطناعي غير متاحة حالياً.'
+                    }
+                }
+                logger.info("Returning expired cached forecast due to API error")
+                return forecast_data
+        except Exception as cache_error:
+            logger.error(f"Failed to retrieve fallback cache: {str(cache_error)}")
+        
         raise HTTPException(status_code=500, detail=f"AI analysis failed: {str(e)}")
 
 
@@ -558,4 +588,34 @@ async def ai_trend_analysis(
         raise
     except Exception as e:
         logger.error(f"Error in AI trend analysis: {str(e)}")
+        
+        # If OpenAI fails, try to return any cached forecast (even if expired)
+        try:
+            query = """
+                SELECT forecast_data, generated_at, valid_until
+                FROM ai_forecasts
+                WHERE forecast_type = 'trend_analysis'
+                ORDER BY generated_at DESC
+                LIMIT 1
+            """
+            async with pool.acquire() as conn:
+                row = await conn.fetchrow(query)
+            
+            if row:
+                forecast_data = json.loads(row['forecast_data']) if isinstance(row['forecast_data'], str) else row['forecast_data']
+                forecast_data['cache_info'] = {
+                    'cached': True,
+                    'generated_at': row['generated_at'].isoformat(),
+                    'valid_until': row['valid_until'].isoformat(),
+                    'expired': row['valid_until'] <= datetime.now(timezone.utc),
+                    'note': {
+                        'en': 'Cached forecast (may be expired). AI service temporarily unavailable.',
+                        'ar': 'توقع محفوظ (قد يكون منتهي الصلاحية). خدمة الذكاء الاصطناعي غير متاحة حالياً.'
+                    }
+                }
+                logger.info("Returning expired cached forecast due to API error")
+                return forecast_data
+        except Exception as cache_error:
+            logger.error(f"Failed to retrieve fallback cache: {str(cache_error)}")
+        
         raise HTTPException(status_code=500, detail=f"AI analysis failed: {str(e)}")
