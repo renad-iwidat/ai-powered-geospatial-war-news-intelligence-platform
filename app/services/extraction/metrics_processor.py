@@ -42,15 +42,12 @@ async def process_metrics(pool: asyncpg.Pool, batch_size: int = 20):
                 SELECT
                     ne.id AS event_id,
                     ne.place_name,
-                    COALESCE(t.content, rn.content_original) AS content
+                    vw.content_ar AS content
                 FROM news_events ne
-                JOIN raw_news rn ON rn.id = ne.raw_news_id
-                LEFT JOIN translations t ON t.raw_news_id = rn.id
-                WHERE rn.has_numbers = true
-                AND (
-                    (t.content IS NOT NULL AND LENGTH(t.content) > 50)
-                    OR (rn.content_original IS NOT NULL AND LENGTH(rn.content_original) > 50)
-                )
+                JOIN vw_news_ar_feed vw ON vw.raw_news_id = ne.raw_news_id
+                WHERE vw.has_numbers = true
+                AND vw.content_ar IS NOT NULL 
+                AND LENGTH(vw.content_ar) > 50
                 AND NOT EXISTS (
                     SELECT 1
                     FROM event_metrics em

@@ -24,7 +24,11 @@ _scheduler_lock = asyncio.Lock()
 class SchedulerManager:
     """Manages background task scheduling"""
     
-    def __init__(self, api_base_url: str = "http://localhost:7235"):
+    def __init__(self, api_base_url: str = None):
+        # Use environment variable if provided, otherwise use default
+        if api_base_url is None:
+            import os
+            api_base_url = os.getenv("API_BASE_URL", "http://localhost:7235")
         self.api_base_url = api_base_url
         self.scheduler = None
         self.is_running = False
@@ -105,7 +109,7 @@ class SchedulerManager:
                     location_result = response.json()
                     logger.info(f"  ✓ Locations extracted: {location_result.get('processed_count', 0)} articles processed")
                 except Exception as e:
-                    logger.error(f"  ✗ Location extraction failed: {str(e)}")
+                    logger.error(f"  ✗ Location extraction failed: {str(e)}", exc_info=True)
                 
                 # Extract metrics (batch size: 100)
                 try:
@@ -118,12 +122,12 @@ class SchedulerManager:
                     metrics_result = response.json()
                     logger.info(f"  ✓ Metrics extracted: {metrics_result.get('processed_count', 0)} events processed")
                 except Exception as e:
-                    logger.error(f"  ✗ Metrics extraction failed: {str(e)}")
+                    logger.error(f"  ✗ Metrics extraction failed: {str(e)}", exc_info=True)
             
             logger.info(f"✅ Data processing completed at {datetime.now().isoformat()}")
         
         except Exception as e:
-            logger.error(f"❌ Data processing failed: {str(e)}")
+            logger.error(f"❌ Data processing failed: {str(e)}", exc_info=True)
     
     async def _run_ai_forecast(self):
         """Execute AI forecast generation"""

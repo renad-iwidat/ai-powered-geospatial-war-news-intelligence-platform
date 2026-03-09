@@ -39,10 +39,23 @@ async def _get_ar_language_id(conn: asyncpg.Connection) -> int:
     Raises:
         RuntimeError: إذا لم توجد اللغة العربية
     """
-    row = await conn.fetchrow("SELECT id FROM languages WHERE code='ar' LIMIT 1;")
-    if not row:
-        raise RuntimeError("Arabic language row not found in languages table (code='ar').")
-    return int(row["id"])
+    try:
+        row = await conn.fetchrow("SELECT id FROM languages WHERE code='ar' LIMIT 1;")
+        if not row:
+            import logging
+            logging.warning("Arabic language row not found in languages table (code='ar'). Attempting to create it...")
+            # Try to insert Arabic language
+            await conn.execute(
+                "INSERT INTO languages (code, name) VALUES ('ar', 'Arabic') ON CONFLICT (code) DO NOTHING"
+            )
+            row = await conn.fetchrow("SELECT id FROM languages WHERE code='ar' LIMIT 1;")
+            if not row:
+                raise RuntimeError("Failed to create or find Arabic language in database")
+        return int(row["id"])
+    except Exception as e:
+        import logging
+        logging.error(f"Error getting Arabic language ID: {str(e)}", exc_info=True)
+        raise
 
 
 def preprocess_text_for_ner(text: str) -> str:
@@ -285,17 +298,29 @@ async def process_locations(
         - locations_upserted: عدد الأماكن المخزنة
         - events_created: عدد الروابط المنشأة
     """
+    import logging
     
     # ============================================================================
     # Step 1: Fetch News Batch
     # ============================================================================
-    async with pool.acquire() as conn:
-        news_rows = await _get_news_batch(conn, batch_size)
+    try:
+        async with pool.acquire() as conn:
+            news_rows = await _get_news_batch(conn, batch_size)
+    except Exception as e:
+        logging.error(f"Error fetching news batch: {str(e)}", exc_info=True)
+        return {
+            "processed_news": 0,
+            "places_detected": 0,
+            "locations_upserted": 0,
+            "events_created": 0
+        }
 
     processed_news = 0
     places_detected = 0
     locations_upserted = 0
     events_created = 0
+    
+    logging.info(f"Processing {len(news_rows)} news articles for location extraction")
 
     # ============================================================================
     # Step 2: Process Each News Item
@@ -317,7 +342,7 @@ async def process_locations(
             places = extract_places_ner(text)
         except Exception as e:
             import logging
-            logging.error(f"Error extracting places from news {raw_news_id}: {str(e)}")
+            logging.error(f"Error extracting places from news {raw_news_id}: {str(e)}", exc_info=True)
             places = []
         
         if not places:
