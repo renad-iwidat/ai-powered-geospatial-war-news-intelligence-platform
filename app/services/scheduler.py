@@ -6,7 +6,7 @@ Uses APScheduler with threading for parallel execution
 
 import logging
 import asyncio
-from datetime import datetime
+from datetime import datetime, timedelta
 from typing import Optional
 from apscheduler.schedulers.background import BackgroundScheduler
 from apscheduler.triggers.interval import IntervalTrigger
@@ -129,38 +129,223 @@ class SchedulerManager:
         try:
             logger.info(f"🤖 Starting AI forecast generation at {datetime.now().isoformat()}")
             
-            async with httpx.AsyncClient(timeout=600.0) as client:
+            # Import here to avoid circular imports
+            import asyncpg
+            from app.core.config import settings
+            from app.services.predictions.llm_analyzer import IntelligenceAnalyzer
+            
+            # Connect to database
+            pool = await asyncpg.create_pool(
+                dsn=settings.DATABASE_URL,
+                min_size=1,
+                max_size=2,
+                command_timeout=120
+            )
+            
+            try:
+                # Generate intelligence forecast
                 try:
                     logger.info("  → Generating intelligence forecast...")
-                    response = await client.get(
-                        f"{self.api_base_url}/api/v1/predictions/intelligence-forecast",
-                        params={"days": 7, "force_refresh": True}
-                    )
-                    response.raise_for_status()
-                    forecast_result = response.json()
+                    await self._generate_intelligence_forecast(pool)
                     logger.info(f"  ✓ Intelligence forecast generated")
-                    logger.info(f"    Risk Level: {forecast_result.get('risk_level', 'N/A')}")
-                    logger.info(f"    Confidence: {forecast_result.get('confidence_overall', 'N/A')}%")
                 except Exception as e:
                     logger.error(f"  ✗ Intelligence forecast failed: {str(e)}")
                 
+                # Generate trend analysis
                 try:
                     logger.info("  → Generating trend analysis...")
-                    response = await client.get(
-                        f"{self.api_base_url}/api/v1/predictions/trend-analysis"
-                    )
-                    response.raise_for_status()
-                    trend_result = response.json()
+                    await self._generate_trend_analysis(pool)
                     logger.info(f"  ✓ Trend analysis generated")
-                    logger.info(f"    Overall Trend: {trend_result.get('overall_trend', 'N/A')}")
-                    logger.info(f"    Trend Strength: {trend_result.get('trend_strength', 'N/A')}%")
                 except Exception as e:
                     logger.error(f"  ✗ Trend analysis failed: {str(e)}")
+                
+                logger.info(f"✅ AI forecast generation completed at {datetime.now().isoformat()}")
             
-            logger.info(f"✅ AI forecast generation completed at {datetime.now().isoformat()}")
+            finally:
+                await pool.close()
         
         except Exception as e:
             logger.error(f"❌ AI forecast generation failed: {str(e)}")
+    
+    async def _generate_intelligence_forecast(self, pool: asyncpg.Pool):
+        """Generate and store intelligence forecast"""
+        import json
+        from app.services.predictions.llm_analyzer import IntelligenceAnalyzer
+        from app.core.config import settings
+        
+        if not settings.OPENAI_API_KEY:
+            logger.warning("OPENAI_API_KEY not configured - skipping intelligence forecast")
+            return
+        
+        # Fetch historical data
+        query = """
+            SELECT
+                DATE(COALESCE(rn.published_at, rn.fetched_at)) as date,
+                COUNT(DISTINCT ne.id) as count
+            FROM raw_news rn
+            LEFT JOIN news_events ne ON rn.id = ne.raw_news_id
+            WHERE COALESCE(rn.published_at, rn.fetched_at) >= CURRENT_DATE - INTERVAL '60 days'
+            GROUP BY DATE(COALESCE(rn.published_at, rn.fetched_at))
+            ORDER BY date ASC
+        """
+        
+        async with pool.acquire() as conn:
+            rows = await conn.fetch(query)
+        
+        if len(rows) < 5:
+            logger.warning(f"Not enough data ({len(rows)} days) for intelligence forecast")
+            return
+        
+        historical_data = [
+            {'date': row['date'].isoformat(), 'count': row['count']}
+            for row in rows
+        ]
+        
+        # Fetch recent articles
+        articles_query = """
+            SELECT
+                rn.title_original as title,
+                rn.content_original as content,
+                rn.published_at,
+                s.name as source_name
+            FROM raw_news rn
+            LEFT JOIN sources s ON rn.source_id = s.id
+            WHERE COALESCE(rn.published_at, rn.fetched_at) >= CURRENT_DATE - INTERVAL '7 days'
+            ORDER BY COALESCE(rn.published_at, rn.fetched_at) DESC
+            LIMIT 20
+        """
+        
+        async with pool.acquire() as conn:
+            article_rows = await conn.fetch(articles_query)
+        
+        recent_articles = [
+            {
+                'title': row['title'],
+                'content': row['content'][:500] if row['content'] else '',
+                'published_at': row['published_at'].isoformat() if row['published_at'] else 'Unknown',
+                'source': row['source_name']
+            }
+            for row in article_rows
+        ]
+        
+        # Generate forecast
+        analyzer = IntelligenceAnalyzer()
+        analysis = await analyzer.analyze_events_forecast(
+            historical_data=historical_data,
+            recent_articles=recent_articles,
+            days_ahead=7
+        )
+        
+        # Store in database
+        valid_until = datetime.utcnow() + timedelta(hours=8)
+        model_info = analysis.get('model_info', {})
+        
+        store_query = """
+            INSERT INTO ai_forecasts 
+            (forecast_type, forecast_data, days_ahead, generated_at, valid_until, model_info)
+            VALUES ($1, $2, $3, NOW(), $4, $5)
+        """
+        
+        async with pool.acquire() as conn:
+            await conn.execute(
+                store_query,
+                'intelligence_forecast',
+                json.dumps(analysis),
+                7,
+                valid_until,
+                json.dumps(model_info)
+            )
+        
+        logger.info(f"    Risk Level: {analysis.get('risk_level', 'N/A')}")
+        logger.info(f"    Confidence: {analysis.get('confidence_overall', 'N/A')}%")
+    
+    async def _generate_trend_analysis(self, pool: asyncpg.Pool):
+        """Generate and store trend analysis"""
+        import json
+        from app.services.predictions.llm_analyzer import IntelligenceAnalyzer
+        from app.core.config import settings
+        
+        if not settings.OPENAI_API_KEY:
+            logger.warning("OPENAI_API_KEY not configured - skipping trend analysis")
+            return
+        
+        # Fetch historical data
+        query = """
+            SELECT
+                DATE(COALESCE(rn.published_at, rn.fetched_at)) as date,
+                COUNT(DISTINCT ne.id) as count
+            FROM raw_news rn
+            LEFT JOIN news_events ne ON rn.id = ne.raw_news_id
+            WHERE COALESCE(rn.published_at, rn.fetched_at) >= CURRENT_DATE - INTERVAL '30 days'
+            GROUP BY DATE(COALESCE(rn.published_at, rn.fetched_at))
+            ORDER BY date ASC
+        """
+        
+        async with pool.acquire() as conn:
+            rows = await conn.fetch(query)
+        
+        if len(rows) < 5:
+            logger.warning(f"Not enough data ({len(rows)} days) for trend analysis")
+            return
+        
+        historical_data = [
+            {'date': row['date'].isoformat(), 'count': row['count']}
+            for row in rows
+        ]
+        
+        # Fetch recent articles
+        articles_query = """
+            SELECT
+                rn.title_original as title,
+                rn.content_original as content,
+                rn.published_at,
+                s.name as source_name
+            FROM raw_news rn
+            LEFT JOIN sources s ON rn.source_id = s.id
+            WHERE COALESCE(rn.published_at, rn.fetched_at) >= CURRENT_DATE - INTERVAL '3 days'
+            ORDER BY COALESCE(rn.published_at, rn.fetched_at) DESC
+            LIMIT 10
+        """
+        
+        async with pool.acquire() as conn:
+            article_rows = await conn.fetch(articles_query)
+        
+        recent_articles = [
+            {
+                'title': row['title'],
+                'content': row['content'][:500] if row['content'] else '',
+                'published_at': row['published_at'].isoformat() if row['published_at'] else 'Unknown',
+                'source': row['source_name']
+            }
+            for row in article_rows
+        ]
+        
+        # Generate analysis
+        analyzer = IntelligenceAnalyzer()
+        analysis = await analyzer.analyze_trend(
+            historical_data=historical_data,
+            recent_articles=recent_articles
+        )
+        
+        # Store in database
+        valid_until = datetime.utcnow() + timedelta(hours=8)
+        
+        store_query = """
+            INSERT INTO ai_forecasts 
+            (forecast_type, forecast_data, generated_at, valid_until)
+            VALUES ($1, $2, NOW(), $3)
+        """
+        
+        async with pool.acquire() as conn:
+            await conn.execute(
+                store_query,
+                'trend_analysis',
+                json.dumps(analysis),
+                valid_until
+            )
+        
+        logger.info(f"    Overall Trend: {analysis.get('overall_trend', 'N/A')}")
+        logger.info(f"    Trend Strength: {analysis.get('trend_strength', 'N/A')}%")
 
 
 # Global scheduler manager instance
