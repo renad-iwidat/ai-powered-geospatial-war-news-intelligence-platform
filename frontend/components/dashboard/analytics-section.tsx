@@ -107,14 +107,17 @@ export function AnalyticsSection() {
                         <line x1="0" y1="75" x2="100" y2="75" stroke="#475569" strokeWidth="0.2" opacity="0.5" />
                         
                         {(() => {
-                          const prices = marketData.oil.trend; // Don't reverse - keep original order
+                          const prices = marketData.oil.trend;
                           const maxPrice = Math.max(...prices.map(p => p.price));
                           const minPrice = Math.min(...prices.map(p => p.price));
                           const range = maxPrice - minPrice || 1;
                           
-                          // Create smooth path points - reversed for RTL display
-                          const points = prices.slice().reverse().map((point, idx) => {
-                            const x = (idx / (prices.length - 1)) * 100;
+                          // Always reverse for correct display (newest on right for EN, newest on left for AR)
+                          const orderedPrices = prices.slice().reverse();
+                          
+                          // Create smooth path points
+                          const points = orderedPrices.map((point, idx) => {
+                            const x = (idx / (orderedPrices.length - 1)) * 100;
                             const y = 100 - ((point.price - minPrice) / range) * 80 - 10; // 10% padding top/bottom
                             return { x, y, price: point.price, date: point.date };
                           });
