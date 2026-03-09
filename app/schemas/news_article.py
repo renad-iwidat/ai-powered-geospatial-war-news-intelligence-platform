@@ -21,6 +21,7 @@ class NewsArticleListItem(BaseModel):
     id: int = Field(..., description="Article ID")
     title: str = Field(..., description="Article title")
     content_preview: Optional[str] = Field(None, description="Content preview (first 200 chars)")
+    content: Optional[str] = Field(None, description="Full article content")
     url: str = Field(..., description="Article URL")
     source_name: Optional[str] = Field(None, description="Source name")
     language_code: str = Field(..., description="Language code (ar, en, he)")

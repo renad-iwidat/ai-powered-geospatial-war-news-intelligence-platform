@@ -157,8 +157,9 @@ Your role is to provide unbiased, data-driven intelligence analysis that decisio
             return analysis
             
         except Exception as e:
-            # Fallback to simple analysis if API fails
-            return self._fallback_analysis(historical_data, days_ahead, str(e))
+            # Re-raise the exception instead of returning fallback
+            # Let the endpoint handle the error and use cache
+            raise
     
     async def analyze_trend(
         self,
@@ -227,7 +228,9 @@ Provide objective trend analysis in JSON format:
             return json.loads(response.choices[0].message.content)
             
         except Exception as e:
-            return self._fallback_trend_analysis(historical_data, str(e))
+            # Re-raise the exception instead of returning fallback
+            # Let the endpoint handle the error and use cache
+            raise
     
     def _prepare_context(
         self,

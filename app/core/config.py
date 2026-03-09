@@ -34,7 +34,7 @@ class Settings(BaseSettings):
     PROJECT_NAME: str = "GeoNews AI"
     PROJECT_VERSION: str = "1.0.0"
     
-    # CORS - Read as string and parse manually
+    # CORS - Can be JSON array or comma-separated string
     CORS_ORIGINS_STR: str = "http://localhost:3001"
     
     # Logging
@@ -59,8 +59,19 @@ class Settings(BaseSettings):
     
     @property
     def CORS_ORIGINS(self) -> list[str]:
-        """Parse CORS_ORIGINS from comma-separated string"""
-        return [origin.strip() for origin in self.CORS_ORIGINS_STR.split(",")]
+        """Parse CORS_ORIGINS from JSON array or comma-separated string"""
+        import json
+        origins_str = self.CORS_ORIGINS_STR.strip()
+        
+        # Try to parse as JSON array first
+        if origins_str.startswith('['):
+            try:
+                return json.loads(origins_str)
+            except json.JSONDecodeError:
+                pass
+        
+        # Fall back to comma-separated parsing
+        return [origin.strip() for origin in origins_str.split(",")]
 
 
 # Global settings instance

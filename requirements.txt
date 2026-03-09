@@ -15,6 +15,7 @@ geopy
 
 # Arabic NLP - CAMeL Tools
 camel-tools
+huggingface-hub
 
 # Time Series Forecasting & ML
 prophet
