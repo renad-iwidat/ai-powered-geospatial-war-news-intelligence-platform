@@ -244,6 +244,12 @@ class SchedulerManager:
             INSERT INTO ai_forecasts 
             (forecast_type, forecast_data, days_ahead, generated_at, valid_until, model_info)
             VALUES ($1, $2, $3, NOW(), $4, $5)
+            ON CONFLICT (forecast_type) DO UPDATE SET
+                forecast_data = EXCLUDED.forecast_data,
+                days_ahead = EXCLUDED.days_ahead,
+                generated_at = NOW(),
+                valid_until = EXCLUDED.valid_until,
+                model_info = EXCLUDED.model_info
         """
         
         async with pool.acquire() as conn:
@@ -329,11 +335,18 @@ class SchedulerManager:
         
         # Store in database
         valid_until = datetime.utcnow() + timedelta(hours=8)
+        model_info = analysis.get('model_info', {})
         
         store_query = """
             INSERT INTO ai_forecasts 
-            (forecast_type, forecast_data, generated_at, valid_until)
-            VALUES ($1, $2, NOW(), $3)
+            (forecast_type, forecast_data, days_ahead, generated_at, valid_until, model_info)
+            VALUES ($1, $2, $3, NOW(), $4, $5)
+            ON CONFLICT (forecast_type) DO UPDATE SET
+                forecast_data = EXCLUDED.forecast_data,
+                days_ahead = EXCLUDED.days_ahead,
+                generated_at = NOW(),
+                valid_until = EXCLUDED.valid_until,
+                model_info = EXCLUDED.model_info
         """
         
         async with pool.acquire() as conn:
@@ -341,7 +354,9 @@ class SchedulerManager:
                 store_query,
                 'trend_analysis',
                 json.dumps(analysis),
-                valid_until
+                30,  # trend analysis covers 30 days of historical data
+                valid_until,
+                json.dumps(model_info)
             )
         
         logger.info(f"    Overall Trend: {analysis.get('overall_trend', 'N/A')}")

@@ -4,7 +4,7 @@
 
 CREATE TABLE IF NOT EXISTS ai_forecasts (
     id SERIAL PRIMARY KEY,
-    forecast_type VARCHAR(50) NOT NULL,  -- 'events_forecast', 'trend_analysis', 'intelligence_forecast'
+    forecast_type VARCHAR(50) NOT NULL UNIQUE,  -- 'events_forecast', 'trend_analysis', 'intelligence_forecast'
     forecast_data JSONB NOT NULL,        -- The complete AI analysis result
     days_ahead INTEGER,                  -- Number of days forecasted (for forecast types)
     generated_at TIMESTAMP NOT NULL DEFAULT NOW(),
@@ -20,6 +20,10 @@ ON ai_forecasts(forecast_type, valid_until DESC);
 -- Index for cleanup of old forecasts
 CREATE INDEX IF NOT EXISTS idx_ai_forecasts_generated_at 
 ON ai_forecasts(generated_at);
+
+-- Unique constraint on forecast_type for upsert operations
+CREATE UNIQUE INDEX IF NOT EXISTS idx_ai_forecasts_type_unique
+ON ai_forecasts(forecast_type);
 
 -- Comments
 COMMENT ON TABLE ai_forecasts IS 'Cached AI-generated forecasts and analysis to reduce API costs';
