@@ -8,7 +8,7 @@ from geopy.geocoders import Nominatim
 from geopy.extra.rate_limiter import RateLimiter
 from geopy.exc import GeocoderTimedOut, GeocoderServiceError
 import asyncio
-from functools import partial
+from functools import partial, lru_cache
 
 from app.core.config import settings
 
@@ -21,11 +21,13 @@ class GeocoderService:
             user_agent=settings.GEOCODING_USER_AGENT,
             timeout=10
         )
-        # Rate limiter: 1 request per second
+        # Rate limiter: 0.5 requests per second (2 requests per second max)
         self.geocode = RateLimiter(
             lambda query: self.geolocator.geocode(query, addressdetails=True),
-            min_delay_seconds=1.0
+            min_delay_seconds=0.5
         )
+        # Cache for geocoding results
+        self._cache = {}
     
     async def geocode_place(self, place_name: str) -> Optional[Dict]:
         """
@@ -45,6 +47,10 @@ class GeocoderService:
             
             Or None if not found
         """
+        # Check cache first
+        if place_name in self._cache:
+            return self._cache[place_name]
+        
         try:
             # Run geocoding in thread pool (geopy is sync)
             loop = asyncio.get_event_loop()
@@ -54,6 +60,7 @@ class GeocoderService:
             )
             
             if not location:
+                self._cache[place_name] = None
                 return None
             
             # Extract data from raw response
@@ -77,9 +84,10 @@ class GeocoderService:
             
             # We need at least OSM data to store the location
             if not osm_id or not osm_type:
+                self._cache[place_name] = None
                 return None
             
-            return {
+            result = {
                 "lat": location.latitude,
                 "lng": location.longitude,
                 "country_code": country_code or "UNKNOWN",
@@ -88,9 +96,15 @@ class GeocoderService:
                 "osm_type": osm_type
             }
             
+            # Cache the result
+            self._cache[place_name] = result
+            return result
+            
         except (GeocoderTimedOut, GeocoderServiceError):
+            self._cache[place_name] = None
             return None
         except Exception:
+            self._cache[place_name] = None
             return None
 
 

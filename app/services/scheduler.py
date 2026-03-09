@@ -97,7 +97,8 @@ class SchedulerManager:
         try:
             logger.info(f"🔄 Starting data processing at {datetime.now().isoformat()}")
             
-            async with httpx.AsyncClient(timeout=300.0) as client:
+            # Increase timeout for location extraction (can take 10+ minutes)
+            async with httpx.AsyncClient(timeout=600.0) as client:
                 # Extract locations (batch size: 50)
                 try:
                     logger.info("  → Extracting locations from news articles...")
