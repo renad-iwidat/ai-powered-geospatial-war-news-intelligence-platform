@@ -6,6 +6,7 @@ Uses APScheduler with threading for parallel execution
 
 import logging
 import asyncio
+import asyncpg
 from datetime import datetime, timedelta
 from typing import Optional
 from apscheduler.schedulers.background import BackgroundScheduler
