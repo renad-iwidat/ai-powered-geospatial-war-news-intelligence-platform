@@ -53,10 +53,14 @@ class GeocoderService:
         
         try:
             # Run geocoding in thread pool (geopy is sync)
+            # Add timeout to prevent hanging requests
             loop = asyncio.get_event_loop()
-            location = await loop.run_in_executor(
-                None,
-                partial(self.geocode, place_name)
+            location = await asyncio.wait_for(
+                loop.run_in_executor(
+                    None,
+                    partial(self.geocode, place_name)
+                ),
+                timeout=15.0  # 15 second timeout for geocoding
             )
             
             if not location:
@@ -100,6 +104,11 @@ class GeocoderService:
             self._cache[place_name] = result
             return result
             
+        except asyncio.TimeoutError:
+            import logging
+            logging.warning(f"Geocoding timeout for place: {place_name}")
+            self._cache[place_name] = None
+            return None
         except (GeocoderTimedOut, GeocoderServiceError):
             self._cache[place_name] = None
             return None

@@ -349,11 +349,25 @@ async def process_locations(
             continue
 
         # حد أعلى لكل خبر لتقليل geocode requests
-        for place in places[:3]:
+        for place in places[:2]:
             places_detected += 1
 
             # ============================================================================
-            # Step 4: Geocode Place Name
+            # Step 4: Check Cache First (Database)
+            # ============================================================================
+            async with pool.acquire() as conn:
+                # Try to find in cache first
+                cached_loc_id = await _find_cached_location(conn, place)
+                
+                if cached_loc_id:
+                    # Found in cache! Use it directly (no geocoding needed)
+                    await _insert_event(conn, raw_news_id, cached_loc_id, place)
+                    events_created += 1
+                    locations_upserted += 1
+                    continue
+            
+            # ============================================================================
+            # Step 5: Geocode Place Name (if not in cache)
             # ============================================================================
             geo, place_clean = await geocode_best_effort(place)
 
@@ -363,7 +377,7 @@ async def process_locations(
                 continue
 
             # ============================================================================
-            # Step 5: Store Location and Create Event
+            # Step 6: Store Location and Create Event
             # ============================================================================
             async with pool.acquire() as conn:
                 loc_id = await _upsert_location(
