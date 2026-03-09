@@ -9,7 +9,8 @@ WORKDIR /app
 ENV PYTHONUNBUFFERED=1 \
     PYTHONDONTWRITEBYTECODE=1 \
     PIP_NO_CACHE_DIR=1 \
-    PIP_DISABLE_PIP_VERSION_CHECK=1
+    PIP_DISABLE_PIP_VERSION_CHECK=1 \
+    CAMEL_TOOLS_DATA=/root/.camel_tools
 
 # Install system dependencies
 RUN apt-get update && apt-get install -y \
@@ -17,6 +18,7 @@ RUN apt-get update && apt-get install -y \
     g++ \
     postgresql-client \
     curl \
+    wget \
     && rm -rf /var/lib/apt/lists/*
 
 # Copy requirements first (for better caching)
@@ -27,24 +29,62 @@ RUN pip install --no-cache-dir -r requirements.txt && \
     find /usr/local/lib/python3.11/site-packages -type d -name "__pycache__" -exec rm -rf {} + 2>/dev/null || true && \
     find /usr/local/lib/python3.11/site-packages -type f -name "*.pyc" -delete
 
-# Download CAMeL Tools NER model
+# Download CAMeL Tools NER model with retry logic
 # This is required for Arabic NER functionality
 RUN python << 'EOF'
 import os
 import sys
+import time
+import traceback
 
 # Create directory for CAMeL tools data
-os.makedirs('/root/.camel_tools/data/ner', exist_ok=True)
+camel_data_dir = '/root/.camel_tools/data/ner'
+os.makedirs(camel_data_dir, exist_ok=True)
 
-try:
-    from camel_tools.ner import NERecognizer
-    print("✅ Loading CAMeL NER model...")
-    recognizer = NERecognizer.pretrained()
-    print("✅ CAMeL NER model loaded successfully")
-except Exception as e:
-    print(f"⚠️  Warning: Could not load CAMeL NER model: {e}")
-    print("System will use simple NER fallback")
-    sys.exit(0)
+print("=" * 70)
+print("🔄 Attempting to download CAMeL Tools NER model...")
+print("=" * 70)
+
+max_retries = 3
+retry_count = 0
+success = False
+
+while retry_count < max_retries and not success:
+    retry_count += 1
+    print(f"\n📥 Attempt {retry_count}/{max_retries}...")
+    
+    try:
+        from camel_tools.ner import NERecognizer
+        print("   ✓ Importing CAMeL Tools NER...")
+        
+        print("   ✓ Loading pretrained model...")
+        recognizer = NERecognizer.pretrained()
+        
+        print("   ✓ Testing model...")
+        # Test the model with a simple sentence
+        test_result = recognizer.predict_sentence("هذا اختبار".split())
+        
+        print("=" * 70)
+        print("✅ CAMeL NER model loaded successfully!")
+        print("=" * 70)
+        success = True
+        
+    except Exception as e:
+        print(f"   ✗ Error: {str(e)}")
+        print(f"   📍 Traceback: {traceback.format_exc()}")
+        
+        if retry_count < max_retries:
+            wait_time = 5 * retry_count  # 5s, 10s, 15s
+            print(f"   ⏳ Waiting {wait_time}s before retry...")
+            time.sleep(wait_time)
+        else:
+            print(f"\n⚠️  Failed to load CAMeL NER model after {max_retries} attempts")
+            print("   System will use simple NER fallback")
+            print("   Note: Accuracy will be lower without CAMeL model")
+
+print("\n" + "=" * 70)
+print("✅ Docker build completed successfully")
+print("=" * 70)
 EOF
 
 # Copy application code
@@ -57,4 +97,4 @@ RUN useradd -m -u 1000 appuser && \
 USER appuser
 
 # Run the scheduler
-CMD python scripts/run_scheduler.py
+CMD ["python", "scripts/run_scheduler.py"]
