@@ -13,7 +13,8 @@ from app.api.v1.endpoints import (
     analytics_statistics,
     data_processing,
     predictions,
-    market_data
+    market_data,
+    sources
 )
 
 # Create main API router
@@ -80,5 +81,13 @@ api_router.include_router(
     market_data.router,
     prefix="/market-data",
     tags=["Market Data"],
+    responses={404: {"description": "Not found"}}
+)
+
+# Sources Endpoints
+api_router.include_router(
+    sources.router,
+    prefix="/sources",
+    tags=["Sources"],
     responses={404: {"description": "Not found"}}
 )

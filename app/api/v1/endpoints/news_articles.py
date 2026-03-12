@@ -10,7 +10,9 @@ from app.core.database import get_db_pool
 from app.schemas import (
     NewsArticleListResponse,
     NewsArticleDetail,
-    NewsArticleListItem
+    NewsArticleListItem,
+    NewsArticleBySource,
+    NewsArticlesBySourceResponse
 )
 
 router = APIRouter()
@@ -108,6 +110,101 @@ async def get_news_articles_list(
         offset=offset
     )
 
+
+@router.get("/by-source/{source_id}", response_model=NewsArticlesBySourceResponse)
+async def get_news_articles_by_source(
+    source_id: int,
+    limit: int = Query(50, ge=1, le=200, description="Number of items per page"),
+    offset: int = Query(0, ge=0, description="Offset for pagination"),
+    search: str = Query(None, description="Search in title or content"),
+    pool: asyncpg.Pool = Depends(get_db_pool)
+):
+    """
+    Get all news articles from a specific source with all details
+    
+    Returns articles from both raw_news and translations tables
+    
+    - **source_id**: The ID of the news source
+    - **limit**: Number of items per page (1-200)
+    - **offset**: Offset for pagination
+    - **search**: Optional search query for title or content
+    """
+    
+    # Build WHERE clause
+    where_clauses = ["rn.source_id = $1"]
+    params = [source_id]
+    param_idx = 2
+    
+    if search:
+        where_clauses.append(f"(rn.title_original ILIKE ${param_idx} OR rn.content_original ILIKE ${param_idx} OR t.title ILIKE ${param_idx} OR t.content ILIKE ${param_idx})")
+        params.append(f"%{search}%")
+        param_idx += 1
+    
+    where_sql = " AND ".join(where_clauses)
+    
+    # Get total count
+    count_query = f"""
+        SELECT COUNT(*)
+        FROM (
+            SELECT DISTINCT rn.id
+            FROM raw_news rn
+            LEFT JOIN translations t ON rn.id = t.raw_news_id
+            WHERE {where_sql}
+        ) as distinct_articles
+    """
+    
+    # Get paginated list with all details from both raw_news and translations
+    list_query = f"""
+        SELECT
+            rn.id,
+            CASE 
+                WHEN rn.language_id = 1 THEN rn.title_original
+                ELSE COALESCE(t.title, rn.title_original)
+            END AS title,
+            CASE 
+                WHEN rn.language_id = 1 THEN rn.content_original
+                ELSE COALESCE(t.content, rn.content_original)
+            END AS content,
+            rn.url,
+            s.name as source_name,
+            s.id as source_id,
+            CASE 
+                WHEN rn.language_id = 1 THEN 'ar'
+                WHEN t.language_id = 2 THEN 'en'
+                WHEN t.language_id = 3 THEN 'he'
+                ELSE 'ar'
+            END as language_code,
+            rn.published_at,
+            rn.fetched_at
+        FROM raw_news rn
+        LEFT JOIN translations t ON rn.id = t.raw_news_id
+        LEFT JOIN sources s ON rn.source_id = s.id
+        WHERE {where_sql}
+        ORDER BY COALESCE(rn.published_at, rn.fetched_at) DESC NULLS LAST
+        LIMIT ${param_idx} OFFSET ${param_idx + 1}
+    """
+    params.extend([limit, offset])
+    
+    # Get source name
+    source_query = "SELECT name FROM sources WHERE id = $1"
+    
+    async with pool.acquire() as conn:
+        total = await conn.fetchval(count_query, *params[:-2]) if len(params) > 3 else await conn.fetchval(count_query, source_id)
+        rows = await conn.fetch(list_query, *params)
+        source_row = await conn.fetchrow(source_query, source_id)
+    
+    source_name = source_row['name'] if source_row else None
+    
+    items = [NewsArticleBySource(**dict(row)) for row in rows]
+    
+    return NewsArticlesBySourceResponse(
+        items=items,
+        total=total,
+        limit=limit,
+        offset=offset,
+        source_id=source_id,
+        source_name=source_name
+    )
 
 
 @router.get("/{article_id}", response_model=NewsArticleDetail)

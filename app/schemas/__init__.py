@@ -7,7 +7,9 @@ from app.schemas.news_article import (
     NewsArticleBase,
     NewsArticleListItem,
     NewsArticleDetail,
-    NewsArticleListResponse
+    NewsArticleListResponse,
+    NewsArticleBySource,
+    NewsArticlesBySourceResponse
 )
 
 from app.schemas.geographic_location import (
@@ -50,12 +52,22 @@ from app.schemas.data_processing import (
     ProcessingStatus
 )
 
+from app.schemas.source import (
+    SourceBase,
+    SourceDetail,
+    SourceListItem,
+    SourceListResponse,
+    SourceStatusResponse
+)
+
 __all__ = [
     # News Articles
     "NewsArticleBase",
     "NewsArticleListItem",
     "NewsArticleDetail",
     "NewsArticleListResponse",
+    "NewsArticleBySource",
+    "NewsArticlesBySourceResponse",
     
     # Geographic Locations
     "GeographicLocationBase",
@@ -91,4 +103,11 @@ __all__ = [
     "MetricsExtractionRequest",
     "MetricsExtractionResponse",
     "ProcessingStatus",
+    
+    # Sources
+    "SourceBase",
+    "SourceDetail",
+    "SourceListItem",
+    "SourceListResponse",
+    "SourceStatusResponse",
 ]
