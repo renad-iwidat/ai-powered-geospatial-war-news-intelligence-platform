@@ -23,7 +23,7 @@ HEADERS = {
 _cache = {
     "data": None,
     "timestamp": 0,
-    "ttl": 500  # 1 minute cache - reduced to get fresher data
+    "ttl": 7200  # 2 hours cache
 }
 
 
@@ -126,6 +126,11 @@ async def get_oil_gold_prices():
         
         gold_data = fetch_asset("GC=F")
         oil_data = fetch_asset("CL=F")
+        silver_data = fetch_asset("SI=F")
+        bitcoin_data = fetch_asset("BTC-USD")
+        ethereum_data = fetch_asset("ETH-USD")
+        solana_data = fetch_asset("SOL-USD")
+        lebanese_lira_data = fetch_asset("LBP=X")
         
         response = {
             "gold": {
@@ -142,9 +147,44 @@ async def get_oil_gold_prices():
                 "unit": "USD/barrel",
                 "symbol": "CL=F"
             },
+            "silver": {
+                "current": silver_data["current"],
+                "trend": silver_data["trend"],
+                "change_7d": silver_data["change_7d"],
+                "unit": "USD/oz",
+                "symbol": "SI=F"
+            },
+            "bitcoin": {
+                "current": bitcoin_data["current"],
+                "trend": bitcoin_data["trend"],
+                "change_7d": bitcoin_data["change_7d"],
+                "unit": "USD",
+                "symbol": "BTC-USD"
+            },
+            "ethereum": {
+                "current": ethereum_data["current"],
+                "trend": ethereum_data["trend"],
+                "change_7d": ethereum_data["change_7d"],
+                "unit": "USD",
+                "symbol": "ETH-USD"
+            },
+            "solana": {
+                "current": solana_data["current"],
+                "trend": solana_data["trend"],
+                "change_7d": solana_data["change_7d"],
+                "unit": "USD",
+                "symbol": "SOL-USD"
+            },
+            "lebanese_lira": {
+                "current": lebanese_lira_data["current"],
+                "trend": lebanese_lira_data["trend"],
+                "change_7d": lebanese_lira_data["change_7d"],
+                "unit": "LBP/USD",
+                "symbol": "LBP=X"
+            },
             "analysis": {
-                "en": f"Gold prices {'increased' if gold_data['change_7d'] > 0 else 'decreased'} by {abs(gold_data['change_7d']):.1f}% over the last 7 days. Oil prices {'increased' if oil_data['change_7d'] > 0 else 'decreased'} by {abs(oil_data['change_7d']):.1f}%. This {'may indicate increased' if oil_data['change_7d'] > 0 else 'suggests reduced'} geopolitical tensions.",
-                "ar": f"أسعار الذهب {'ارتفعت' if gold_data['change_7d'] > 0 else 'انخفضت'} بنسبة {abs(gold_data['change_7d']):.1f}٪ خلال آخر 7 أيام. أسعار النفط {'ارتفعت' if oil_data['change_7d'] > 0 else 'انخفضت'} بنسبة {abs(oil_data['change_7d']):.1f}٪. هذا {'قد يشير إلى زيادة' if oil_data['change_7d'] > 0 else 'يشير إلى انخفاض'} التوترات الجيوسياسية."
+                "en": f"Gold prices {'increased' if gold_data['change_7d'] > 0 else 'decreased'} by {abs(gold_data['change_7d']):.1f}% over the last 7 days. Oil prices {'increased' if oil_data['change_7d'] > 0 else 'decreased'} by {abs(oil_data['change_7d']):.1f}%. Silver {'increased' if silver_data['change_7d'] > 0 else 'decreased'} by {abs(silver_data['change_7d']):.1f}%. Bitcoin {'increased' if bitcoin_data['change_7d'] > 0 else 'decreased'} by {abs(bitcoin_data['change_7d']):.1f}%. Ethereum {'increased' if ethereum_data['change_7d'] > 0 else 'decreased'} by {abs(ethereum_data['change_7d']):.1f}%. Solana {'increased' if solana_data['change_7d'] > 0 else 'decreased'} by {abs(solana_data['change_7d']):.1f}%. Lebanese Lira {'increased' if lebanese_lira_data['change_7d'] > 0 else 'decreased'} by {abs(lebanese_lira_data['change_7d']):.1f}%.",
+                "ar": f"أسعار الذهب {'ارتفعت' if gold_data['change_7d'] > 0 else 'انخفضت'} بنسبة {abs(gold_data['change_7d']):.1f}٪ خلال آخر 7 أيام. أسعار النفط {'ارتفعت' if oil_data['change_7d'] > 0 else 'انخفضت'} بنسبة {abs(oil_data['change_7d']):.1f}٪. الفضة {'ارتفعت' if silver_data['change_7d'] > 0 else 'انخفضت'} بنسبة {abs(silver_data['change_7d']):.1f}٪. البيتكوين {'ارتفع' if bitcoin_data['change_7d'] > 0 else 'انخفض'} بنسبة {abs(bitcoin_data['change_7d']):.1f}٪. الإيثيريوم {'ارتفع' if ethereum_data['change_7d'] > 0 else 'انخفض'} بنسبة {abs(ethereum_data['change_7d']):.1f}٪. سولانا {'ارتفعت' if solana_data['change_7d'] > 0 else 'انخفضت'} بنسبة {abs(solana_data['change_7d']):.1f}٪. الليرة اللبنانية {'ارتفعت' if lebanese_lira_data['change_7d'] > 0 else 'انخفضت'} بنسبة {abs(lebanese_lira_data['change_7d']):.1f}٪."
             }
         }
         
