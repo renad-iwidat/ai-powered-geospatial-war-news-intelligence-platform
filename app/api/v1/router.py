@@ -14,7 +14,8 @@ from app.api.v1.endpoints import (
     data_processing,
     predictions,
     market_data,
-    sources
+    sources,
+    instagram_feed
 )
 
 # Create main API router
@@ -89,5 +90,12 @@ api_router.include_router(
     sources.router,
     prefix="/sources",
     tags=["Sources"],
+    responses={404: {"description": "Not found"}}
+)
+
+# Instagram Feed Endpoints
+api_router.include_router(
+    instagram_feed.router,
+    tags=["Instagram Feed"],
     responses={404: {"description": "Not found"}}
 )

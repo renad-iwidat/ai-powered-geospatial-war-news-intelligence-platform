@@ -47,6 +47,12 @@ class Settings(BaseSettings):
     # Alpha Vantage Configuration (Market Data)
     ALPHA_VANTAGE_API_KEY: Optional[str] = None
     
+    # Instagram Configuration
+    INSTAGRAM_BUSINESS_ACCOUNT_ID: Optional[str] = None
+    INSTAGRAM_ACCESS_TOKEN: Optional[str] = None
+    INSTAGRAM_API_VERSION: str = "v18.0"
+    INSTAGRAM_CACHE_DURATION_MINUTES: int = 15
+    
     # Docker Configuration (optional, for docker-compose)
     BACKEND_PORT: Optional[str] = None
     FRONTEND_PORT: Optional[str] = None

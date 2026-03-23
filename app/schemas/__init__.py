@@ -60,6 +60,13 @@ from app.schemas.source import (
     SourceStatusResponse
 )
 
+from app.schemas.instagram_content import (
+    InstagramMedia,
+    InstagramBusinessAccount,
+    InstagramMediaInsight,
+    InstagramFeedResponse
+)
+
 __all__ = [
     # News Articles
     "NewsArticleBase",
@@ -110,4 +117,10 @@ __all__ = [
     "SourceListItem",
     "SourceListResponse",
     "SourceStatusResponse",
+    
+    # Instagram
+    "InstagramMedia",
+    "InstagramBusinessAccount",
+    "InstagramMediaInsight",
+    "InstagramFeedResponse",
 ]
