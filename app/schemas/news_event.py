@@ -27,6 +27,8 @@ class NewsEventListItem(BaseModel):
     country_code: Optional[str] = Field(None, description="Country code")
     news_title: Optional[str] = Field(None, description="News article title")
     published_at: Optional[datetime] = Field(None, description="Publication date")
+    source_type: Optional[str] = Field(None, description="Source type (X or RSS)")
+    source: Optional[str] = Field(None, description="Source account name or website")
     metrics_count: int = Field(0, description="Number of metrics")
     
     class Config:
@@ -40,6 +42,8 @@ class NewsEventDetail(BaseModel):
     location_id: int = Field(..., description="Location ID")
     place_name: str = Field(..., description="Place name")
     event_type: Optional[str] = Field(None, description="Event type")
+    source_type: Optional[str] = Field(None, description="Source type (X or RSS)")
+    source: Optional[str] = Field(None, description="Source account name or website")
     created_at: Optional[datetime] = Field(None, description="Creation date")
     
     class Config:

@@ -83,10 +83,22 @@ async def get_news_events_list(
             l.country_code,
             rn.title_original as news_title,
             rn.published_at,
+            CASE
+                WHEN st.name ILIKE 'x' OR st.name ILIKE 'x%' OR st.name ILIKE '%twitter%' THEN 'X'
+                WHEN st.name ILIKE '%rss%' THEN 'RSS'
+                ELSE st.name
+            END as source_type,
+            CASE
+                WHEN st.name ILIKE 'x' OR st.name ILIKE 'x%' OR st.name ILIKE '%twitter%' THEN s.name
+                WHEN st.name ILIKE '%rss%' THEN s.url
+                ELSE s.name
+            END as source,
             COALESCE(em.metrics_count, 0) as metrics_count
         FROM news_events ne
         LEFT JOIN locations l ON ne.location_id = l.id
         LEFT JOIN raw_news rn ON ne.raw_news_id = rn.id
+        LEFT JOIN sources s ON rn.source_id = s.id
+        LEFT JOIN source_types st ON s.source_type_id = st.id
         LEFT JOIN (
             SELECT event_id, COUNT(*) as metrics_count
             FROM event_metrics
@@ -126,14 +138,27 @@ async def get_news_event_detail(
     
     query = """
         SELECT
-            id,
-            raw_news_id,
-            location_id,
-            place_name,
-            event_type,
-            created_at
-        FROM news_events
-        WHERE id = $1
+            ne.id,
+            ne.raw_news_id,
+            ne.location_id,
+            ne.place_name,
+            ne.event_type,
+            CASE
+                WHEN st.name ILIKE 'x' OR st.name ILIKE 'x%' OR st.name ILIKE '%twitter%' THEN 'X'
+                WHEN st.name ILIKE '%rss%' THEN 'RSS'
+                ELSE st.name
+            END as source_type,
+            CASE
+                WHEN st.name ILIKE 'x' OR st.name ILIKE 'x%' OR st.name ILIKE '%twitter%' THEN s.name
+                WHEN st.name ILIKE '%rss%' THEN s.url
+                ELSE s.name
+            END as source,
+            ne.created_at
+        FROM news_events ne
+        LEFT JOIN raw_news rn ON ne.raw_news_id = rn.id
+        LEFT JOIN sources s ON rn.source_id = s.id
+        LEFT JOIN source_types st ON s.source_type_id = st.id
+        WHERE ne.id = $1
         LIMIT 1
     """
     
