@@ -38,6 +38,13 @@ def main():
     """Main entry point for standalone scheduler"""
     global scheduler_manager
     
+    # Load .env if present so local runs pick up API_BASE_URL
+    try:
+        from dotenv import load_dotenv
+        load_dotenv(dotenv_path=Path(__file__).parent.parent / ".env", override=False)
+    except Exception:
+        pass
+
     # Get API base URL from environment or use default
     api_base_url = os.getenv("API_BASE_URL", "http://localhost:7235")
     

@@ -30,6 +30,9 @@ class SchedulerManager:
             import os
             api_base_url = os.getenv("API_BASE_URL", "http://localhost:7235")
         self.api_base_url = api_base_url
+        # Toggle API vs direct DB processing
+        import os
+        self.use_api = os.getenv("SCHEDULER_USE_API", "true").strip().lower() in ("1", "true", "yes", "y")
         self.scheduler = None
         self.is_running = False
     
@@ -96,34 +99,91 @@ class SchedulerManager:
         """Execute data processing tasks (location + metrics extraction)"""
         try:
             logger.info(f"🔄 Starting data processing at {datetime.now().isoformat()}")
-            
-            # Increase timeout for location extraction (can take 10+ minutes)
-            async with httpx.AsyncClient(timeout=600.0) as client:
-                # Extract locations (batch size: 50)
+
+            if self.use_api:
+                # Increase timeout for location extraction (can take 10+ minutes)
+                async with httpx.AsyncClient(timeout=600.0) as client:
+                    # Extract locations (batch size: 50)
+                    try:
+                        logger.info("  → Extracting locations from news articles...")
+                        response = await client.post(
+                            f"{self.api_base_url}/api/v1/data-processing/extract-locations",
+                            json={"batch_size": 50}
+                        )
+                        response.raise_for_status()
+                        location_result = response.json()
+                        
+                        # Log detailed location extraction results
+                        processed = location_result.get('processed_news', 0)
+                        detected = location_result.get('places_detected', 0)
+                        events = location_result.get('events_created', 0)
+                        
+                        logger.info(f"  ✓ Location extraction completed:")
+                        logger.info(f"    • Articles processed: {processed}")
+                        logger.info(f"    • Locations detected: {detected}")
+                        logger.info(f"    • Events created: {events}")
+                        
+                    except Exception as e:
+                        logger.error(f"  ✗ Location extraction failed: {str(e)}", exc_info=True)
+                    
+                    # Extract metrics (batch size: 100)
+                    try:
+                        logger.info("  → Extracting metrics from events...")
+                        response = await client.post(
+                            f"{self.api_base_url}/api/v1/data-processing/extract-metrics",
+                            json={"batch_size": 100}
+                        )
+                        response.raise_for_status()
+                        metrics_result = response.json()
+                        
+                        # Log detailed metrics extraction results
+                        processed = metrics_result.get('processed_events', 0)
+                        extracted = metrics_result.get('metrics_created', 0)
+                        
+                        logger.info(f"  ✓ Metrics extraction completed:")
+                        logger.info(f"    • Events processed: {processed}")
+                        logger.info(f"    • Metrics extracted: {extracted}")
+                        
+                    except Exception as e:
+                        logger.error(f"  ✗ Metrics extraction failed: {str(e)}", exc_info=True)
+            else:
+                # Direct DB processing (no API)
+                from app.core.config import settings
+                from app.services.geo.location_processor import process_locations
+                from app.services.extraction.metrics_processor import process_metrics
+
+                pool = await asyncpg.create_pool(
+                    dsn=settings.DATABASE_URL,
+                    min_size=1,
+                    max_size=2,
+                    command_timeout=settings.DB_COMMAND_TIMEOUT
+                )
                 try:
-                    logger.info("  → Extracting locations from news articles...")
-                    response = await client.post(
-                        f"{self.api_base_url}/api/v1/data-processing/extract-locations",
-                        json={"batch_size": 50}
-                    )
-                    response.raise_for_status()
-                    location_result = response.json()
-                    logger.info(f"  ✓ Locations extracted: {location_result.get('processed_count', 0)} articles processed")
-                except Exception as e:
-                    logger.error(f"  ✗ Location extraction failed: {str(e)}", exc_info=True)
-                
-                # Extract metrics (batch size: 100)
-                try:
-                    logger.info("  → Extracting metrics from events...")
-                    response = await client.post(
-                        f"{self.api_base_url}/api/v1/data-processing/extract-metrics",
-                        json={"batch_size": 100}
-                    )
-                    response.raise_for_status()
-                    metrics_result = response.json()
-                    logger.info(f"  ✓ Metrics extracted: {metrics_result.get('processed_count', 0)} events processed")
-                except Exception as e:
-                    logger.error(f"  ✗ Metrics extraction failed: {str(e)}", exc_info=True)
+                    try:
+                        logger.info("  → Extracting locations from news articles (direct DB)...")
+                        location_result = await process_locations(pool, batch_size=50)
+                        processed = location_result.get('processed_news', 0)
+                        detected = location_result.get('places_detected', 0)
+                        events = location_result.get('events_created', 0)
+                        logger.info(f"  ✓ Location extraction completed:")
+                        logger.info(f"    • Articles processed: {processed}")
+                        logger.info(f"    • Locations detected: {detected}")
+                        logger.info(f"    • Events created: {events}")
+                    except Exception as e:
+                        logger.error(f"  ✗ Location extraction failed: {str(e)}", exc_info=True)
+
+                    try:
+                        logger.info("  → Extracting metrics from events (direct DB)...")
+                        metrics_result = await process_metrics(pool, batch_size=100)
+                        processed = metrics_result.get('processed_events', 0)
+                        extracted = metrics_result.get('metrics_created', 0)
+                        logger.info(f"  ✓ Metrics extraction completed:")
+                        logger.info(f"    • Events processed: {processed}")
+                        logger.info(f"    • Metrics extracted: {extracted}")
+                    except Exception as e:
+                        logger.error(f"  ✗ Metrics extraction failed: {str(e)}", exc_info=True)
+                finally:
+                    await pool.close()
             
             logger.info(f"✅ Data processing completed at {datetime.now().isoformat()}")
         

@@ -33,7 +33,7 @@ app = FastAPI(
     
     ## Technology Stack
     
-    * **NLP**: CAMeL Tools with AraBERT (88.4% F1-score for Arabic NER)
+    * **NLP**: Simple Arabic NER (regex-based place extraction)
     * **Geocoding**: geopy with Nominatim (OpenStreetMap)
     * **Database**: PostgreSQL with asyncpg
     * **Framework**: FastAPI with Pydantic validation

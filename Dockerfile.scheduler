@@ -9,8 +9,7 @@ WORKDIR /app
 ENV PYTHONUNBUFFERED=1 \
     PYTHONDONTWRITEBYTECODE=1 \
     PIP_NO_CACHE_DIR=1 \
-    PIP_DISABLE_PIP_VERSION_CHECK=1 \
-    CAMEL_TOOLS_DATA=/root/.camel_tools
+    PIP_DISABLE_PIP_VERSION_CHECK=1
 
 # Install system dependencies
 RUN apt-get update && apt-get install -y \
@@ -29,64 +28,14 @@ RUN pip install --no-cache-dir -r requirements.txt && \
     find /usr/local/lib/python3.11/site-packages -type d -name "__pycache__" -exec rm -rf {} + 2>/dev/null || true && \
     find /usr/local/lib/python3.11/site-packages -type f -name "*.pyc" -delete
 
-# Download CAMeL Tools NER model with retry logic
-# This is required for Arabic NER functionality
+# Using Simple NER (regex-based) - no model download needed
 RUN python << 'EOF'
-import os
-import sys
-import time
-import traceback
-
-# Create directory for CAMeL tools data
-camel_data_dir = '/root/.camel_tools/data/ner'
-os.makedirs(camel_data_dir, exist_ok=True)
-
 print("=" * 70)
-print("🔄 Attempting to download CAMeL Tools NER model...")
+print("✅ Using Simple NER (regex-based Arabic place extraction)")
 print("=" * 70)
-
-max_retries = 3
-retry_count = 0
-success = False
-
-while retry_count < max_retries and not success:
-    retry_count += 1
-    print(f"\n📥 Attempt {retry_count}/{max_retries}...")
-    
-    try:
-        from transformers import AutoTokenizer, AutoModelForTokenClassification
-        print("   ✓ Importing transformers...")
-        
-        print("   ✓ Loading AraBERT NER model from Hugging Face...")
-        model_name = "CAMeL-Lab/bert-base-arabic-camelbert-msa-ner"
-        tokenizer = AutoTokenizer.from_pretrained(model_name)
-        model = AutoModelForTokenClassification.from_pretrained(model_name)
-        
-        # Save locally for faster loading
-        model.save_pretrained(f"{camel_data_dir}/arabert")
-        tokenizer.save_pretrained(f"{camel_data_dir}/arabert")
-        
-        print("   ✓ Model saved locally")
-        print("=" * 70)
-        print("✅ CAMeL NER model downloaded and cached successfully!")
-        print("=" * 70)
-        success = True
-        
-    except Exception as e:
-        print(f"   ✗ Error: {str(e)}")
-        print(f"   📍 Traceback: {traceback.format_exc()}")
-        
-        if retry_count < max_retries:
-            wait_time = 5 * retry_count  # 5s, 10s, 15s
-            print(f"   ⏳ Waiting {wait_time}s before retry...")
-            time.sleep(wait_time)
-        else:
-            print(f"\n⚠️  Failed to download NER model after {max_retries} attempts")
-            print("   System will use simple NER fallback")
-            print("   Note: Accuracy will be lower without NER model")
-
-print("\n" + "=" * 70)
-print("✅ Docker build completed successfully")
+print("   • No external model download required")
+print("   • Fast initialization")
+print("   • Suitable for production deployment")
 print("=" * 70)
 EOF
 

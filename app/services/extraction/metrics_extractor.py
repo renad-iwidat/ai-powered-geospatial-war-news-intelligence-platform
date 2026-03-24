@@ -297,7 +297,11 @@ def extract_metrics(text: str):
             sentence = sentence.strip()
             if len(sentence) < 10:  # Skip very short sentences
                 continue
-                
+
+            # Per-sentence de-duplication by numeric value
+            # Keep only the first metric_type encountered for the same value.
+            per_sentence = {}
+
             # Try each pattern against the sentence
             for metric_type, pattern in PATTERNS:
                 try:
@@ -310,18 +314,29 @@ def extract_metrics(text: str):
                             # Skip unrealistic values
                             if value <= 0 or value > 100000:
                                 continue
-                            
-                            metrics.append({
-                                "metric_type": metric_type,
-                                "value": value,
-                                "snippet": sentence[:200]  # Limit snippet length
-                            })
+
+                            if value not in per_sentence:
+                                per_sentence[value] = {
+                                    "metric_type": metric_type,
+                                    "value": value,
+                                    "snippet": sentence[:200]
+                                }
                             
                         except (ValueError, TypeError):
                             continue
                 except Exception:
                     # Skip problematic patterns
                     continue
+
+            if per_sentence:
+                metrics.extend(
+                    {
+                        "metric_type": v["metric_type"],
+                        "value": v["value"],
+                        "snippet": v["snippet"]
+                    }
+                    for v in per_sentence.values()
+                )
     except Exception as e:
         # If anything goes wrong, return empty list
         import logging

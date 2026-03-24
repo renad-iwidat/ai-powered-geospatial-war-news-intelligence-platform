@@ -32,7 +32,7 @@ async def extract_locations_from_news(
     
     This endpoint:
     1. Reads unprocessed Arabic news articles
-    2. Extracts place names using CAMeL Tools NER
+    2. Extracts place names using Simple NER (regex-based)
     3. Converts place names to coordinates using geopy
     4. Stores locations and creates events
     """

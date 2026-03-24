@@ -30,10 +30,13 @@ async def process_metrics(pool: asyncpg.Pool, batch_size: int = 20):
         - processed_events: Number of articles processed
         - metrics_created: Total metrics extracted and stored
     """
+    import logging
+    logger = logging.getLogger(__name__)
 
     # ========================================================================
     # Fetch Unprocessed Articles with Content
     # ========================================================================
+    logger.info(f"📊 Fetching events without metrics (batch size: {batch_size})...")
 
     try:
         async with pool.acquire() as conn:
@@ -57,9 +60,9 @@ async def process_metrics(pool: asyncpg.Pool, batch_size: int = 20):
                 """,
                 batch_size,
             )
+            logger.info(f"  ✓ Found {len(rows)} events to process")
     except Exception as e:
-        import logging
-        logging.error(f"Error fetching events for metrics processing: {str(e)}")
+        logger.error(f"  ✗ Error fetching events for metrics processing: {str(e)}")
         return {
             "processed_events": 0,
             "metrics_created": 0,
@@ -67,23 +70,25 @@ async def process_metrics(pool: asyncpg.Pool, batch_size: int = 20):
 
     processed = 0
     metrics_created = 0
+    metrics_by_type = {}
 
     # ========================================================================
     # Process Each Article
     # ========================================================================
+    logger.info(f"🔍 Processing {len(rows)} events for metrics extraction...")
 
     for r in rows:
         processed += 1
 
         event_id = r["event_id"]
+        place_name = r["place_name"]
         text = r["content"] or ""
 
         # Extract metrics from the entire content
         try:
             metrics = extract_metrics(text)
         except Exception as e:
-            import logging
-            logging.error(f"Error extracting metrics from event {event_id}: {str(e)}")
+            logger.error(f"  ✗ Error extracting metrics from event {event_id} ({place_name}): {str(e)}")
             metrics = []
 
         if not metrics:
@@ -114,9 +119,26 @@ async def process_metrics(pool: asyncpg.Pool, batch_size: int = 20):
                         m["snippet"][:200],
                     )
                     metrics_created += 1
-                except Exception:
-                    # Skip duplicates or other errors
+                    
+                    # Track metrics by type
+                    metric_type = m["metric_type"]
+                    metrics_by_type[metric_type] = metrics_by_type.get(metric_type, 0) + 1
+                    
+                except Exception as e:
+                    logger.debug(f"  ⚠ Skipped metric for event {event_id}: {str(e)}")
                     pass
+
+    # ========================================================================
+    # Log Summary
+    # ========================================================================
+    logger.info(f"✅ Metrics extraction completed:")
+    logger.info(f"  • Events processed: {processed}")
+    logger.info(f"  • Metrics extracted: {metrics_created}")
+    
+    if metrics_by_type:
+        logger.info(f"  • Breakdown by type:")
+        for metric_type, count in sorted(metrics_by_type.items()):
+            logger.info(f"    - {metric_type}: {count}")
 
     return {
         "processed_events": processed,

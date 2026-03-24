@@ -1,24 +1,23 @@
 """
 =============================================================================
-Location Processing Service
+Location Processing Service (Hardcoded Locations)
 =============================================================================
-يقرأ أخبار عربية، يستخرج أسماء أماكن، يحول إلى إحداثيات، ويخزن في قاعدة البيانات.
+يقرأ أخبار عربية، يستخرج أسماء أماكن من قائمة محددة مسبقاً (hardcoded).
 
 الخطوات:
 1. قراءة أخبار عربية (ترجمة أو أصل عربي)
 2. استخراج أسماء أماكن باستخدام NER
-3. تحويل الأسماء إلى إحداثيات باستخدام Nominatim
-4. خزن الأماكن والربط مع الأخبار
+3. البحث عن الأماكن المستخرجة في قائمة المواقع المعرّفة
+4. خزن الأحداث مع المواقع المرتبطة
 =============================================================================
 """
 
 import asyncio
 import asyncpg
 import re
-from typing import Dict, Optional
+from typing import Dict, Optional, List
 
-from ..nlp.ner_camel import extract_places_ner
-from .geocoder_geopy import get_geocoder
+from ..nlp.ner_simple import extract_places_simple
 
 
 # ============================================================================
@@ -28,11 +27,11 @@ from .geocoder_geopy import get_geocoder
 _AR_PREFIXES = ("و", "ف", "ب", "ك", "ل")
 
 # ============================================================================
-# قائمة المدن والدول الأساسية (Whitelist)
+# قائمة المدن والدول الأساسية (Hardcoded)
 # ============================================================================
 # هذه القائمة تحتوي على المدن والدول المهمة مع إحداثياتها الصحيحة
-# لتجنب الخلط مع أسماء مشابهة في دول أخرى
-IMPORTANT_LOCATIONS = {
+# لا نعتمد على قاعدة البيانات للمواقع، كل شيء معرّف هنا
+LOCATIONS_DATABASE = {
     # الدول
     'لبنان': {'country_code': 'LB', 'lat': 33.8547, 'lng': 35.8623, 'type': 'country'},
     'سوريا': {'country_code': 'SY', 'lat': 34.8021, 'lng': 38.9968, 'type': 'country'},
@@ -105,10 +104,10 @@ async def _get_ar_language_id(conn: asyncpg.Connection) -> int:
     Raises:
         RuntimeError: إذا لم توجد اللغة العربية
     """
+    import logging
     try:
         row = await conn.fetchrow("SELECT id FROM languages WHERE code='ar' LIMIT 1;")
         if not row:
-            import logging
             logging.warning("Arabic language row not found in languages table (code='ar'). Attempting to create it...")
             # Try to insert Arabic language
             await conn.execute(
@@ -119,7 +118,6 @@ async def _get_ar_language_id(conn: asyncpg.Connection) -> int:
                 raise RuntimeError("Failed to create or find Arabic language in database")
         return int(row["id"])
     except Exception as e:
-        import logging
         logging.error(f"Error getting Arabic language ID: {str(e)}", exc_info=True)
         raise
 
@@ -178,6 +176,8 @@ async def _get_news_batch(conn: asyncpg.Connection, batch_size: int) -> list:
     2. أو raw_news إذا كان أصلاً عربي
     
     يجيب فقط الأخبار اللي لسا ما إلها events.
+    
+    استبعاد المصادر 17 و 18 (مصادر النهار)
     """
     ar_id = await _get_ar_language_id(conn)
 
@@ -195,6 +195,7 @@ async def _get_news_batch(conn: asyncpg.Connection, batch_size: int) -> list:
           AND NOT EXISTS (
             SELECT 1 FROM news_events ne WHERE ne.raw_news_id = rn.id
           )
+          AND rn.source_id NOT IN (17, 18)
         ORDER BY COALESCE(rn.published_at, rn.fetched_at) DESC NULLS LAST
         LIMIT $2
         """,
@@ -203,162 +204,43 @@ async def _get_news_batch(conn: asyncpg.Connection, batch_size: int) -> list:
     )
 
 
-async def _find_cached_location(conn: asyncpg.Connection, name: str) -> Optional[int]:
+def find_locations_in_text(text: str) -> List[tuple]:
     """
-    البحث عن مكان في الـ cache (جدول locations).
+    البحث عن المواقع المعرّفة في النص باستخدام Regex.
     
-    إذا الاسم موجود، رجّع ID.
-    (لاحقًا ممكن نعملها أدق حسب (name, country_code))
-    """
-    row = await conn.fetchrow(
-        "SELECT id FROM locations WHERE name=$1 LIMIT 1;",
-        name
-    )
-    return int(row["id"]) if row else None
-
-
-async def _upsert_location(
-    conn: asyncpg.Connection,
-    name: str,
-    country_code: str,
-    lat: float,
-    lng: float,
-    osm_id: int,
-    osm_type: str
-) -> int:
-    """
-    إدراج أو تحديث مكان في قاعدة البيانات.
-    
-    يستخدم (osm_type, osm_id) كـ unique key.
-    إذا كان المكان موجود، يحدّث الإحداثيات والبيانات.
-    """
-    try:
-        row = await conn.fetchrow(
-            """
-            INSERT INTO locations (name, country_code, latitude, longitude, region_level, osm_id, osm_type)
-            VALUES ($1, $2, $3, $4, $5, $6, $7)
-            ON CONFLICT (osm_type, osm_id)
-            DO UPDATE SET
-              latitude = EXCLUDED.latitude,
-              longitude = EXCLUDED.longitude,
-              name = EXCLUDED.name,
-              country_code = EXCLUDED.country_code
-            RETURNING id
-            """,
-            name,
-            country_code,
-            lat,
-            lng,
-            "unknown",
-            osm_id,
-            osm_type
-        )
-        return int(row["id"])
-    except Exception as e:
-        # If fails due to name+country_code conflict, find existing
-        existing = await conn.fetchrow(
-            "SELECT id FROM locations WHERE name = $1 AND country_code = $2 LIMIT 1",
-            name,
-            country_code
-        )
-        if existing:
-            return int(existing["id"])
-        
-        # If fails due to osm conflict, find existing
-        existing = await conn.fetchrow(
-            "SELECT id FROM locations WHERE osm_type = $1 AND osm_id = $2 LIMIT 1",
-            osm_type,
-            osm_id
-        )
-        if existing:
-            return int(existing["id"])
-        
-        raise e
-
-
-async def geocode_best_effort(
-    place: str
-) -> tuple:
-    """
-    Convert place name to coordinates using geopy
-    
-    Steps:
-    1. Check whitelist first (IMPORTANT_LOCATIONS)
-    2. If place has prefix: try without prefix first
-    3. If fails or no prefix: try original name
+    يبحث عن أسماء المواقع من LOCATIONS_DATABASE في النص.
+    يتعامل مع:
+    - حروف الجر الملتصقة (و، ف، ب، ك، ل)
+    - الرموز الإضافية (فاصلات، نقاط، نقطتان)
+    - المسافات الإضافية
     
     Returns:
-        (geo_dict, place_name_used) or (None, None) if failed
+        قائمة من (location_name, location_data) للمواقع المكتشفة
     """
-    # ============================================================================
-    # Step 1: Check Whitelist First (Most Important!)
-    # ============================================================================
-    if place in IMPORTANT_LOCATIONS:
-        loc_data = IMPORTANT_LOCATIONS[place]
-        return {
-            'name': place,
-            'country_code': loc_data['country_code'],
-            'lat': loc_data['lat'],
-            'lng': loc_data['lng'],
-            'osm_id': 0,  # Whitelist marker
-            'osm_type': 'whitelist'
-        }, place
+    found_locations = []
+    seen = set()
     
-    geocoder = get_geocoder()
-    
-    # Check if place has prefix
-    place_cleaned = split_prefix_if_safe(place)
-    
-    # If we removed a prefix, try cleaned version first
-    if place_cleaned != place:
-        # Check whitelist for cleaned version
-        if place_cleaned in IMPORTANT_LOCATIONS:
-            loc_data = IMPORTANT_LOCATIONS[place_cleaned]
-            return {
-                'name': place_cleaned,
-                'country_code': loc_data['country_code'],
-                'lat': loc_data['lat'],
-                'lng': loc_data['lng'],
-                'osm_id': 0,
-                'osm_type': 'whitelist'
-            }, place_cleaned
+    # بناء regex pattern لكل موقع
+    for location_name in LOCATIONS_DATABASE.keys():
+        # Escape special regex characters
+        escaped_name = re.escape(location_name)
         
-        geo = await geocoder.geocode_place(place_cleaned)
+        # Pattern يتعامل مع:
+        # 1. حروف جر قبل الاسم: [وفبكل]?
+        # 2. الاسم نفسه
+        # 3. رموز بعد الاسم: [،:\.]*
+        # 4. كلمات حدود: \b
+        pattern = rf'\b[وفبكل]?{escaped_name}[،:\.]*\b'
         
-        if geo and geo.get("country_code") and geo.get("osm_id") and geo.get("osm_type"):
-            return geo, place_cleaned
+        # البحث عن جميع التطابقات
+        matches = re.finditer(pattern, text)
+        
+        for match in matches:
+            if location_name not in seen:
+                found_locations.append((location_name, LOCATIONS_DATABASE[location_name]))
+                seen.add(location_name)
     
-    # Try original name
-    geo = await geocoder.geocode_place(place)
-    
-    if geo and geo.get("country_code") and geo.get("osm_id") and geo.get("osm_type"):
-        return geo, place
-    
-    return None, None
-
-
-async def _insert_event(
-    conn: asyncpg.Connection,
-    raw_news_id: int,
-    location_id: int,
-    place_name: str
-) -> None:
-    """
-    إنشاء ربط بين خبر ومكان (news_event).
-    
-    يستخدم ON CONFLICT لتجنب التكرار.
-    """
-    await conn.execute(
-        """
-        INSERT INTO news_events (raw_news_id, location_id, place_name, event_type)
-        VALUES ($1, $2, $3, $4)
-        ON CONFLICT (raw_news_id, location_id) DO NOTHING
-        """,
-        raw_news_id,
-        location_id,
-        place_name,
-        "unknown"
-    )
+    return found_locations
 
 
 # ============================================================================
@@ -374,21 +256,18 @@ async def process_locations(
     
     الخطوات:
     1. قراءة أخبار عربية (ترجمة أو raw عربي)
-    2. استخراج أسماء أماكن باستخدام NER
-    3. تحويل الأسماء إلى إحداثيات (Nominatim)
-    4. خزن الأماكن في جدول locations
-    5. ربط الأخبار بالأماكن في جدول news_events
+    2. استخراج أسماء أماكن من النص
+    3. البحث عن الأماكن في قائمة LOCATIONS_DATABASE
+    4. خزن الأحداث مع المواقع المرتبطة
     
     Args:
         pool: connection pool لقاعدة البيانات
         batch_size: عدد الأخبار المراد معالجتها
-        sleep_seconds: تأخير بين طلبات Nominatim (rate limiting)
     
     Returns:
         dict يحتوي على إحصائيات:
         - processed_news: عدد الأخبار المقروءة
-        - places_detected: عدد الأماكن المستخرجة
-        - locations_upserted: عدد الأماكن المخزنة
+        - locations_found: عدد المواقع المكتشفة
         - events_created: عدد الروابط المنشأة
     """
     import logging
@@ -403,17 +282,16 @@ async def process_locations(
         logging.error(f"Error fetching news batch: {str(e)}", exc_info=True)
         return {
             "processed_news": 0,
-            "places_detected": 0,
-            "locations_upserted": 0,
+            "locations_found": 0,
             "events_created": 0
         }
 
     processed_news = 0
-    places_detected = 0
-    locations_upserted = 0
+    locations_found = 0
     events_created = 0
+    locations_by_country = {}
     
-    logging.info(f"Processing {len(news_rows)} news articles for location extraction")
+    logging.info(f"📍 Processing {len(news_rows)} news articles for location extraction")
 
     # ============================================================================
     # Step 2: Process Each News Item
@@ -429,70 +307,91 @@ async def process_locations(
         text = preprocess_text_for_ner(text)
 
         # ============================================================================
-        # Step 3: Extract Places Using NER
+        # Step 3: Find Locations in Text
         # ============================================================================
         try:
-            places = extract_places_ner(text)
+            found_locs = find_locations_in_text(text)
         except Exception as e:
-            import logging
-            logging.error(f"Error extracting places from news {raw_news_id}: {str(e)}", exc_info=True)
-            places = []
+            logging.error(f"  ✗ Error finding locations in news {raw_news_id}: {str(e)}", exc_info=True)
+            found_locs = []
         
-        if not places:
+        if not found_locs:
             continue
 
-        # حد أعلى لكل خبر لتقليل geocode requests
-        for place in places[:2]:
-            places_detected += 1
-
-            # ============================================================================
-            # Step 4: Check Cache First (Database)
-            # ============================================================================
-            async with pool.acquire() as conn:
-                # Try to find in cache first
-                cached_loc_id = await _find_cached_location(conn, place)
+        # ============================================================================
+        # Step 4: Store Events for Each Location
+        # ============================================================================
+        async with pool.acquire() as conn:
+            for place_name, loc_data in found_locs:
+                locations_found += 1
+                country_code = loc_data['country_code']
                 
-                if cached_loc_id:
-                    # Found in cache! Use it directly (no geocoding needed)
-                    await _insert_event(conn, raw_news_id, cached_loc_id, place)
+                # Track locations by country
+                if country_code not in locations_by_country:
+                    locations_by_country[country_code] = []
+                locations_by_country[country_code].append(place_name)
+                
+                try:
+                    # إدراج أو تحديث المكان في قاعدة البيانات
+                    row = await conn.fetchrow(
+                        """
+                        INSERT INTO locations (name, country_code, latitude, longitude, region_level, osm_id, osm_type)
+                        VALUES ($1, $2, $3, $4, $5, $6, $7)
+                        ON CONFLICT (name, country_code)
+                        DO UPDATE SET
+                          latitude = EXCLUDED.latitude,
+                          longitude = EXCLUDED.longitude
+                        RETURNING id
+                        """,
+                        place_name,
+                        loc_data['country_code'],
+                        loc_data['lat'],
+                        loc_data['lng'],
+                        loc_data['type'],
+                        hash(place_name) % 2147483647,  # Simple hash for osm_id
+                        'hardcoded'
+                    )
+                    
+                    location_id = int(row["id"])
+                    
+                    # إنشاء ربط بين الخبر والمكان
+                    await conn.execute(
+                        """
+                        INSERT INTO news_events (raw_news_id, location_id, place_name, event_type)
+                        VALUES ($1, $2, $3, $4)
+                        ON CONFLICT (raw_news_id, location_id) DO NOTHING
+                        """,
+                        raw_news_id,
+                        location_id,
+                        place_name,
+                        "location_mention"
+                    )
                     events_created += 1
-                    locations_upserted += 1
+                    
+                except Exception as e:
+                    logging.error(f"  ✗ Error storing location {place_name} for news {raw_news_id}: {str(e)}", exc_info=True)
                     continue
-            
-            # ============================================================================
-            # Step 5: Geocode Place Name (if not in cache)
-            # ============================================================================
-            geo, place_clean = await geocode_best_effort(place)
 
-            if not geo:
-                continue
-            if not geo.get("osm_id") or not geo.get("osm_type"):
-                continue
-
-            # ============================================================================
-            # Step 6: Store Location and Create Event
-            # ============================================================================
-            async with pool.acquire() as conn:
-                loc_id = await _upsert_location(
-                    conn,
-                    place_clean,
-                    geo["country_code"],
-                    geo["lat"],
-                    geo["lng"],
-                    geo["osm_id"],
-                    geo["osm_type"],
-                )
-                locations_upserted += 1
-
-                await _insert_event(conn, raw_news_id, loc_id, place)
-                events_created += 1
+    # ============================================================================
+    # Log Summary
+    # ============================================================================
+    logging.info(f"✅ Location extraction completed:")
+    logging.info(f"  • News articles processed: {processed_news}")
+    logging.info(f"  • Locations detected: {locations_found}")
+    logging.info(f"  • Events created: {events_created}")
+    
+    if locations_by_country:
+        logging.info(f"  • Breakdown by country:")
+        for country_code in sorted(locations_by_country.keys()):
+            unique_locs = list(set(locations_by_country[country_code]))
+            logging.info(f"    - {country_code}: {len(unique_locs)} unique locations ({', '.join(unique_locs[:3])}{'...' if len(unique_locs) > 3 else ''})")
 
     # ============================================================================
     # Return Statistics
     # ============================================================================
     return {
         "processed_news": processed_news,
-        "places_detected": places_detected,
-        "locations_upserted": locations_upserted,
+        "places_detected": locations_found,
+        "locations_upserted": locations_found,
         "events_created": events_created
     }

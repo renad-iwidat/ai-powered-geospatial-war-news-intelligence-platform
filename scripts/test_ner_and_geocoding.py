@@ -9,7 +9,7 @@ import os
 # Add app to path
 sys.path.insert(0, os.path.dirname(os.path.dirname(os.path.abspath(__file__))))
 
-from app.services.nlp.ner_camel import extract_places_ner
+from app.services.nlp.ner_simple import extract_places_simple
 from app.services.geo.geocoder_geopy import get_geocoder
 import asyncio
 
@@ -29,7 +29,7 @@ def test_ner():
     for i, text in enumerate(test_texts, 1):
         print(f"\n📝 Test {i}: {text[:60]}...")
         try:
-            places = extract_places_ner(text)
+            places = extract_places_simple(text)
             if places:
                 print(f"   ✅ Found {len(places)} places:")
                 for place in places:
