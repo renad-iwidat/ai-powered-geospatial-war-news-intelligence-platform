@@ -13,7 +13,7 @@ from datetime import datetime
 
 logger = logging.getLogger(__name__)
 
-router = APIRouter(prefix="/instagram", tags=["instagram"])
+router = APIRouter()
 
 
 @router.get("/feed", response_model=dict)

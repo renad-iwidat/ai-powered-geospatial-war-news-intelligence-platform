@@ -96,6 +96,7 @@ api_router.include_router(
 # Instagram Feed Endpoints
 api_router.include_router(
     instagram_feed.router,
+    prefix="/instagram",
     tags=["Instagram Feed"],
     responses={404: {"description": "Not found"}}
 )
