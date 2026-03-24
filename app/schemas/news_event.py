@@ -40,6 +40,9 @@ class NewsEventDetail(BaseModel):
     location_id: int = Field(..., description="Location ID")
     place_name: str = Field(..., description="Place name")
     event_type: Optional[str] = Field(None, description="Event type")
+    news_title: Optional[str] = Field(None, description="Arabic news article title")
+    news_content: Optional[str] = Field(None, description="Arabic news article content")
+    published_at: Optional[datetime] = Field(None, description="Publication date")
     created_at: Optional[datetime] = Field(None, description="Creation date")
     
     class Config:

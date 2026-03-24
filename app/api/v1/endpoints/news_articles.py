@@ -36,30 +36,62 @@ async def get_news_articles_list(
     """
     
     # Build WHERE clause
-    where_clauses = []
+    where_clauses = ["(rn.language_id = 1 OR t.id IS NOT NULL)"]
     params = []
     param_idx = 1
     
     if search:
-        where_clauses.append(f"(title_ar ILIKE ${param_idx} OR content_ar ILIKE ${param_idx})")
+        where_clauses.append(
+            f"""(
+                CASE
+                    WHEN rn.language_id = 1 THEN rn.title_original
+                    ELSE t.title
+                END ILIKE ${param_idx}
+                OR
+                CASE
+                    WHEN rn.language_id = 1 THEN rn.content_original
+                    ELSE t.content
+                END ILIKE ${param_idx}
+            )"""
+        )
         params.append(f"%{search}%")
         param_idx += 1
     
     if language:
-        where_clauses.append(f"language_code = ${param_idx}")
-        params.append(language)
+        where_clauses.append(f"${param_idx} = 'ar'")
+        params.append(language.lower())
         param_idx += 1
     
     if has_events is not None:
         if has_events:
-            where_clauses.append("events_count > 0")
+            where_clauses.append(
+                "EXISTS (SELECT 1 FROM news_events ne2 WHERE ne2.raw_news_id = rn.id)"
+            )
         else:
-            where_clauses.append("events_count = 0")
+            where_clauses.append(
+                "NOT EXISTS (SELECT 1 FROM news_events ne2 WHERE ne2.raw_news_id = rn.id)"
+            )
     
     where_sql = "WHERE " + " AND ".join(where_clauses) if where_clauses else ""
     
     # Get total count
-    count_query = f"SELECT COUNT(*) FROM raw_news rn LEFT JOIN translations t ON rn.id = t.raw_news_id AND t.language_id = 1 WHERE (rn.language_id = 1 OR t.language_id = 1)"
+    count_query = f"""
+        SELECT COUNT(*)
+        FROM raw_news rn
+        LEFT JOIN LATERAL (
+            SELECT tr.id
+            FROM translations tr
+            WHERE tr.raw_news_id = rn.id
+              AND tr.language_id = 1
+              AND (
+                  NULLIF(BTRIM(COALESCE(tr.title, '')), '') IS NOT NULL
+                  OR NULLIF(BTRIM(COALESCE(tr.content, '')), '') IS NOT NULL
+              )
+            ORDER BY tr.created_at DESC NULLS LAST, tr.id DESC
+            LIMIT 1
+        ) t ON TRUE
+        {where_sql}
+    """
     
     # Get paginated list
     list_query = f"""
@@ -67,15 +99,15 @@ async def get_news_articles_list(
             rn.id,
             CASE 
                 WHEN rn.language_id = 1 THEN rn.title_original
-                ELSE COALESCE(t.title, rn.title_original)
+                ELSE t.title
             END AS title,
             CASE 
                 WHEN rn.language_id = 1 THEN LEFT(rn.content_original, 200)
-                ELSE LEFT(COALESCE(t.content, rn.content_original), 200)
+                ELSE LEFT(t.content, 200)
             END AS content_preview,
             CASE 
                 WHEN rn.language_id = 1 THEN rn.content_original
-                ELSE COALESCE(t.content, rn.content_original)
+                ELSE t.content
             END AS content,
             rn.url,
             s.name as source_name,
@@ -87,9 +119,20 @@ async def get_news_articles_list(
              WHERE ne.raw_news_id = rn.id) as metrics_count,
             false as has_numbers
         FROM raw_news rn
-        LEFT JOIN translations t ON rn.id = t.raw_news_id AND t.language_id = 1
+        LEFT JOIN LATERAL (
+            SELECT tr.id, tr.title, tr.content
+            FROM translations tr
+            WHERE tr.raw_news_id = rn.id
+              AND tr.language_id = 1
+              AND (
+                  NULLIF(BTRIM(COALESCE(tr.title, '')), '') IS NOT NULL
+                  OR NULLIF(BTRIM(COALESCE(tr.content, '')), '') IS NOT NULL
+              )
+            ORDER BY tr.created_at DESC NULLS LAST, tr.id DESC
+            LIMIT 1
+        ) t ON TRUE
         LEFT JOIN sources s ON rn.source_id = s.id
-        WHERE (rn.language_id = 1 OR t.language_id = 1)
+        {where_sql}
         ORDER BY COALESCE(rn.published_at, rn.fetched_at) DESC NULLS LAST
         LIMIT ${param_idx} OFFSET ${param_idx + 1}
     """
@@ -126,11 +169,11 @@ async def get_news_article_detail(
             rn.id,
             CASE 
                 WHEN rn.language_id = 1 THEN rn.title_original
-                ELSE COALESCE(t.title, rn.title_original)
+                ELSE t.title
             END AS title,
             CASE 
                 WHEN rn.language_id = 1 THEN rn.content_original
-                ELSE COALESCE(t.content, rn.content_original)
+                ELSE t.content
             END AS content,
             rn.url,
             s.name as source_name,
@@ -138,10 +181,21 @@ async def get_news_article_detail(
             rn.published_at,
             rn.fetched_at
         FROM raw_news rn
-        LEFT JOIN translations t ON rn.id = t.raw_news_id AND t.language_id = 1
+        LEFT JOIN LATERAL (
+            SELECT tr.id, tr.title, tr.content
+            FROM translations tr
+            WHERE tr.raw_news_id = rn.id
+              AND tr.language_id = 1
+              AND (
+                  NULLIF(BTRIM(COALESCE(tr.title, '')), '') IS NOT NULL
+                  OR NULLIF(BTRIM(COALESCE(tr.content, '')), '') IS NOT NULL
+              )
+            ORDER BY tr.created_at DESC NULLS LAST, tr.id DESC
+            LIMIT 1
+        ) t ON TRUE
         LEFT JOIN sources s ON rn.source_id = s.id
         WHERE rn.id = $1
-        AND (rn.language_id = 1 OR t.language_id = 1)
+        AND (rn.language_id = 1 OR t.id IS NOT NULL)
         LIMIT 1
     """
     

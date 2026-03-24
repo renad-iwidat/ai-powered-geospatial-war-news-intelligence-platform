@@ -3,7 +3,6 @@ Metrics Processing Service
 Processes news articles to extract and store metrics in the database
 """
 
-import re
 import asyncpg
 from .metrics_extractor import extract_metrics
 
@@ -13,6 +12,17 @@ _RESTRICTED_SOURCE_IDS = (17, 18)
 # ============================================================================
 # Main Processing Function
 # ============================================================================
+
+async def _get_ar_language_id(conn: asyncpg.Connection) -> int:
+    row = await conn.fetchrow("SELECT id FROM languages WHERE code='ar' LIMIT 1;")
+    if not row:
+        await conn.execute(
+            "INSERT INTO languages (code, name) VALUES ('ar', 'Arabic') ON CONFLICT (code) DO NOTHING"
+        )
+        row = await conn.fetchrow("SELECT id FROM languages WHERE code='ar' LIMIT 1;")
+    if not row:
+        raise RuntimeError("Failed to create or find the Arabic language row")
+    return int(row["id"])
 
 async def process_metrics(pool: asyncpg.Pool, batch_size: int = 20):
     """
@@ -42,27 +52,51 @@ async def process_metrics(pool: asyncpg.Pool, batch_size: int = 20):
 
     try:
         async with pool.acquire() as conn:
+            ar_id = await _get_ar_language_id(conn)
             rows = await conn.fetch(
                 """
                 SELECT
                     ne.id AS event_id,
                     ne.place_name,
-                    vw.content_ar AS content,
+                    CASE
+                        WHEN rn.language_id = $1 THEN rn.content_original
+                        ELSE t.content
+                    END AS content,
                     rn.source_id AS source_id
                 FROM news_events ne
                 JOIN raw_news rn ON rn.id = ne.raw_news_id
-                JOIN vw_news_ar_feed vw ON vw.raw_news_id = ne.raw_news_id
-                WHERE vw.has_numbers = true
-                AND vw.content_ar IS NOT NULL
-                AND LENGTH(vw.content_ar) > 50
+                LEFT JOIN LATERAL (
+                    SELECT tr.id, tr.content
+                    FROM translations tr
+                    WHERE tr.raw_news_id = rn.id
+                      AND tr.language_id = $1
+                      AND NULLIF(BTRIM(COALESCE(tr.content, '')), '') IS NOT NULL
+                    ORDER BY tr.created_at DESC NULLS LAST, tr.id DESC
+                    LIMIT 1
+                ) t ON TRUE
+                WHERE (
+                    (
+                        rn.language_id = $1
+                        AND rn.content_original IS NOT NULL
+                        AND LENGTH(rn.content_original) > 50
+                        AND rn.content_original ~ '[0-9٠-٩]'
+                    )
+                    OR (
+                        rn.language_id <> $1
+                        AND t.id IS NOT NULL
+                        AND LENGTH(t.content) > 50
+                        AND t.content ~ '[0-9٠-٩]'
+                    )
+                )
                 AND rn.source_id NOT IN (17, 18)
                 AND NOT EXISTS (
                     SELECT 1
                     FROM event_metrics em
                     WHERE em.event_id = ne.id
                 )
-                LIMIT $1;
+                LIMIT $2;
                 """,
+                ar_id,
                 batch_size,
             )
             logger.info(f"  ✓ Found {len(rows)} events to process")

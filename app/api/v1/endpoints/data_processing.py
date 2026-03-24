@@ -70,7 +70,10 @@ async def extract_metrics_from_events(
     
     try:
         result = await process_metrics(pool, batch_size=request.batch_size)
-        return MetricsExtractionResponse(**result)
+        return MetricsExtractionResponse(
+            events_processed=result.get("processed_events", result.get("events_processed", 0)),
+            metrics_extracted=result.get("metrics_created", result.get("metrics_extracted", 0))
+        )
     except Exception as e:
         import logging
         logging.error(f"Error in extract_metrics: {str(e)}", exc_info=True)
@@ -97,9 +100,44 @@ async def get_processing_status(
     
     async with pool.acquire() as conn:
         # Articles stats
-        total_articles = await conn.fetchval("SELECT COUNT(*) FROM raw_news")
+        total_articles = await conn.fetchval(
+            """
+            SELECT COUNT(*)
+            FROM raw_news rn
+            LEFT JOIN LATERAL (
+                SELECT tr.id
+                FROM translations tr
+                WHERE tr.raw_news_id = rn.id
+                  AND tr.language_id = 1
+                  AND (
+                      NULLIF(BTRIM(COALESCE(tr.title, '')), '') IS NOT NULL
+                      OR NULLIF(BTRIM(COALESCE(tr.content, '')), '') IS NOT NULL
+                  )
+                ORDER BY tr.created_at DESC NULLS LAST, tr.id DESC
+                LIMIT 1
+            ) t ON TRUE
+            WHERE rn.language_id = 1 OR t.id IS NOT NULL
+            """
+        )
         articles_with_events = await conn.fetchval(
-            "SELECT COUNT(DISTINCT raw_news_id) FROM news_events"
+            """
+            SELECT COUNT(DISTINCT ne.raw_news_id)
+            FROM news_events ne
+            JOIN raw_news rn ON rn.id = ne.raw_news_id
+            LEFT JOIN LATERAL (
+                SELECT tr.id
+                FROM translations tr
+                WHERE tr.raw_news_id = rn.id
+                  AND tr.language_id = 1
+                  AND (
+                      NULLIF(BTRIM(COALESCE(tr.title, '')), '') IS NOT NULL
+                      OR NULLIF(BTRIM(COALESCE(tr.content, '')), '') IS NOT NULL
+                  )
+                ORDER BY tr.created_at DESC NULLS LAST, tr.id DESC
+                LIMIT 1
+            ) t ON TRUE
+            WHERE rn.language_id = 1 OR t.id IS NOT NULL
+            """
         )
         articles_without_events = total_articles - articles_with_events
         

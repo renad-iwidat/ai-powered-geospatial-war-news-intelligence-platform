@@ -100,13 +100,32 @@ async def _get_news_batch(conn: asyncpg.Connection, batch_size: int) -> list:
         SELECT
           rn.id AS raw_news_id,
           rn.source_id,
-          COALESCE(t.title, rn.title_original) AS title_ar,
-          COALESCE(t.content, rn.content_original) AS content_ar
+          CASE
+            WHEN rn.language_id = $1 THEN rn.title_original
+            ELSE t.title
+          END AS title_ar,
+          CASE
+            WHEN rn.language_id = $1 THEN rn.content_original
+            ELSE t.content
+          END AS content_ar
         FROM raw_news rn
-        LEFT JOIN translations t
-          ON t.raw_news_id = rn.id AND t.language_id = $1
+        LEFT JOIN LATERAL (
+          SELECT tr.id, tr.title, tr.content
+          FROM translations tr
+          WHERE tr.raw_news_id = rn.id
+            AND tr.language_id = $1
+            AND (
+              NULLIF(BTRIM(COALESCE(tr.title, '')), '') IS NOT NULL
+              OR NULLIF(BTRIM(COALESCE(tr.content, '')), '') IS NOT NULL
+            )
+          ORDER BY tr.created_at DESC NULLS LAST, tr.id DESC
+          LIMIT 1
+        ) t ON TRUE
         WHERE
-          (t.id IS NOT NULL OR rn.language_id = $1)
+          (
+            rn.language_id = $1
+            OR t.id IS NOT NULL
+          )
           AND NOT EXISTS (
             SELECT 1 FROM news_events ne WHERE ne.raw_news_id = rn.id
           )

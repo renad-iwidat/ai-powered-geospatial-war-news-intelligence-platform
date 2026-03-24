@@ -164,12 +164,12 @@ async def get_analytics_timeline(
     """
     
     # Build WHERE clause
-    where_sql = ""
+    extra_filters = []
     params = []
     param_idx = 1
     
     if country_code:
-        where_sql = "WHERE l.country_code = $1"
+        extra_filters.append("l.country_code = $1")
         params.append(country_code.upper())
         param_idx += 1
     
@@ -181,7 +181,10 @@ async def get_analytics_timeline(
             ne.id as event_id,
             l.name as location_name,
             l.country_code,
-            rn.title_original as news_title,
+            CASE
+                WHEN rn.language_id = 1 THEN rn.title_original
+                ELSE t.title
+            END as news_title,
             json_object_agg(
                 em.metric_type,
                 em.value
@@ -189,9 +192,25 @@ async def get_analytics_timeline(
         FROM news_events ne
         LEFT JOIN locations l ON ne.location_id = l.id
         LEFT JOIN raw_news rn ON ne.raw_news_id = rn.id
+        LEFT JOIN LATERAL (
+            SELECT tr.id, tr.title
+            FROM translations tr
+            WHERE tr.raw_news_id = rn.id
+              AND tr.language_id = 1
+              AND (
+                  NULLIF(BTRIM(COALESCE(tr.title, '')), '') IS NOT NULL
+                  OR NULLIF(BTRIM(COALESCE(tr.content, '')), '') IS NOT NULL
+              )
+            ORDER BY tr.created_at DESC NULLS LAST, tr.id DESC
+            LIMIT 1
+        ) t ON TRUE
         LEFT JOIN event_metrics em ON ne.id = em.event_id
-        {where_sql}
-        GROUP BY ne.id, l.name, l.country_code, rn.title_original, rn.published_at, rn.fetched_at
+        WHERE (rn.language_id = 1 OR t.id IS NOT NULL)
+        {"AND " + " AND ".join(extra_filters) if extra_filters else ""}
+        GROUP BY ne.id, l.name, l.country_code, CASE
+            WHEN rn.language_id = 1 THEN rn.title_original
+            ELSE t.title
+        END, rn.published_at, rn.fetched_at
         ORDER BY COALESCE(rn.published_at, rn.fetched_at) DESC NULLS LAST
         LIMIT ${param_idx}
     """

@@ -132,7 +132,21 @@ async def get_location_events(
     count_query = """
         SELECT COUNT(*)
         FROM news_events ne
+        LEFT JOIN raw_news rn ON ne.raw_news_id = rn.id
+        LEFT JOIN LATERAL (
+            SELECT tr.id
+            FROM translations tr
+            WHERE tr.raw_news_id = rn.id
+              AND tr.language_id = 1
+              AND (
+                  NULLIF(BTRIM(COALESCE(tr.title, '')), '') IS NOT NULL
+                  OR NULLIF(BTRIM(COALESCE(tr.content, '')), '') IS NOT NULL
+              )
+            ORDER BY tr.created_at DESC NULLS LAST, tr.id DESC
+            LIMIT 1
+        ) t ON TRUE
         WHERE ne.location_id = $1
+        AND (rn.language_id = 1 OR t.id IS NOT NULL)
     """
     
     # Get events
@@ -142,13 +156,29 @@ async def get_location_events(
             ne.raw_news_id,
             ne.place_name,
             ne.event_type,
-            rn.title_original as news_title,
-            rn.published_at,
+            CASE
+                WHEN rn.language_id = 1 THEN rn.title_original
+                ELSE t.title
+            END as news_title,
+            COALESCE(rn.published_at, rn.fetched_at) as published_at,
             (SELECT COUNT(*) FROM event_metrics em WHERE em.event_id = ne.id) as metrics_count
         FROM news_events ne
         LEFT JOIN raw_news rn ON ne.raw_news_id = rn.id
+        LEFT JOIN LATERAL (
+            SELECT tr.id, tr.title
+            FROM translations tr
+            WHERE tr.raw_news_id = rn.id
+              AND tr.language_id = 1
+              AND (
+                  NULLIF(BTRIM(COALESCE(tr.title, '')), '') IS NOT NULL
+                  OR NULLIF(BTRIM(COALESCE(tr.content, '')), '') IS NOT NULL
+              )
+            ORDER BY tr.created_at DESC NULLS LAST, tr.id DESC
+            LIMIT 1
+        ) t ON TRUE
         WHERE ne.location_id = $1
-        ORDER BY rn.published_at DESC NULLS LAST
+        AND (rn.language_id = 1 OR t.id IS NOT NULL)
+        ORDER BY COALESCE(rn.published_at, rn.fetched_at) DESC NULLS LAST
         LIMIT $2 OFFSET $3
     """
     
@@ -184,9 +214,20 @@ async def get_location_news(
         SELECT COUNT(DISTINCT rn.id)
         FROM raw_news rn
         JOIN news_events ne ON rn.id = ne.raw_news_id
-        LEFT JOIN translations t ON rn.id = t.raw_news_id AND t.language_id = 1
+        LEFT JOIN LATERAL (
+            SELECT tr.id
+            FROM translations tr
+            WHERE tr.raw_news_id = rn.id
+              AND tr.language_id = 1
+              AND (
+                  NULLIF(BTRIM(COALESCE(tr.title, '')), '') IS NOT NULL
+                  OR NULLIF(BTRIM(COALESCE(tr.content, '')), '') IS NOT NULL
+              )
+            ORDER BY tr.created_at DESC NULLS LAST, tr.id DESC
+            LIMIT 1
+        ) t ON TRUE
         WHERE ne.location_id = $1
-        AND (rn.language_id = 1 OR t.language_id = 1)
+        AND (rn.language_id = 1 OR t.id IS NOT NULL)
     """
     
     # Get news articles with Arabic content (original or translated)
@@ -195,11 +236,11 @@ async def get_location_news(
             rn.id,
             CASE 
                 WHEN rn.language_id = 1 THEN rn.title_original
-                ELSE COALESCE(t.title, rn.title_original)
+                ELSE t.title
             END AS title,
             CASE 
                 WHEN rn.language_id = 1 THEN LEFT(rn.content_original, 200)
-                ELSE LEFT(COALESCE(t.content, rn.content_original), 200)
+                ELSE LEFT(t.content, 200)
             END AS content_preview,
             rn.url,
             s.name as source_name,
@@ -211,10 +252,21 @@ async def get_location_news(
              WHERE ne.raw_news_id = rn.id) as metrics_count
         FROM raw_news rn
         JOIN news_events ne ON rn.id = ne.raw_news_id
-        LEFT JOIN translations t ON rn.id = t.raw_news_id AND t.language_id = 1
+        LEFT JOIN LATERAL (
+            SELECT tr.id, tr.title, tr.content
+            FROM translations tr
+            WHERE tr.raw_news_id = rn.id
+              AND tr.language_id = 1
+              AND (
+                  NULLIF(BTRIM(COALESCE(tr.title, '')), '') IS NOT NULL
+                  OR NULLIF(BTRIM(COALESCE(tr.content, '')), '') IS NOT NULL
+              )
+            ORDER BY tr.created_at DESC NULLS LAST, tr.id DESC
+            LIMIT 1
+        ) t ON TRUE
         LEFT JOIN sources s ON rn.source_id = s.id
         WHERE ne.location_id = $1
-        AND (rn.language_id = 1 OR t.language_id = 1)
+        AND (rn.language_id = 1 OR t.id IS NOT NULL)
         ORDER BY COALESCE(rn.published_at, rn.fetched_at) DESC NULLS LAST
         LIMIT $2 OFFSET $3
     """
