@@ -22,7 +22,7 @@ _instagram_cache: Dict[str, Any] = {
 class InstagramService:
     """Service for fetching Instagram business account data"""
 
-    BASE_URL = f"https://graph.instagram.com/{settings.INSTAGRAM_API_VERSION}"
+    BASE_URL = f"https://graph.facebook.com/{settings.INSTAGRAM_API_VERSION}"
 
     @classmethod
     async def get_account_info(cls) -> Optional[InstagramBusinessAccount]:
