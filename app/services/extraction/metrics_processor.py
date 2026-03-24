@@ -7,6 +7,8 @@ import re
 import asyncpg
 from .metrics_extractor import extract_metrics
 
+_RESTRICTED_SOURCE_IDS = (17, 18)
+
 
 # ============================================================================
 # Main Processing Function
@@ -45,12 +47,15 @@ async def process_metrics(pool: asyncpg.Pool, batch_size: int = 20):
                 SELECT
                     ne.id AS event_id,
                     ne.place_name,
-                    vw.content_ar AS content
+                    vw.content_ar AS content,
+                    rn.source_id AS source_id
                 FROM news_events ne
+                JOIN raw_news rn ON rn.id = ne.raw_news_id
                 JOIN vw_news_ar_feed vw ON vw.raw_news_id = ne.raw_news_id
                 WHERE vw.has_numbers = true
-                AND vw.content_ar IS NOT NULL 
+                AND vw.content_ar IS NOT NULL
                 AND LENGTH(vw.content_ar) > 50
+                AND rn.source_id NOT IN (17, 18)
                 AND NOT EXISTS (
                     SELECT 1
                     FROM event_metrics em
@@ -82,6 +87,9 @@ async def process_metrics(pool: asyncpg.Pool, batch_size: int = 20):
 
         event_id = r["event_id"]
         place_name = r["place_name"]
+        source_id = r["source_id"]
+        if source_id in _RESTRICTED_SOURCE_IDS:
+            continue
         text = r["content"] or ""
 
         # Extract metrics from the entire content
