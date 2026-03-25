@@ -36,7 +36,7 @@ async def get_news_events_list(
     """
     
     # Build WHERE clause
-    where_clauses = ["(rn.language_id = 1 OR t.id IS NOT NULL)"]
+    where_clauses = []
     params = []
     param_idx = 1
     
@@ -65,14 +65,10 @@ async def get_news_events_list(
         LEFT JOIN locations l ON ne.location_id = l.id
         LEFT JOIN raw_news rn ON ne.raw_news_id = rn.id
         LEFT JOIN LATERAL (
-            SELECT tr.id
+            SELECT tr.id, tr.title, tr.content
             FROM translations tr
             WHERE tr.raw_news_id = rn.id
               AND tr.language_id = 1
-              AND (
-                  NULLIF(BTRIM(COALESCE(tr.title, '')), '') IS NOT NULL
-                  OR NULLIF(BTRIM(COALESCE(tr.content, '')), '') IS NOT NULL
-              )
             ORDER BY tr.created_at DESC NULLS LAST, tr.id DESC
             LIMIT 1
         ) t ON TRUE
@@ -96,7 +92,7 @@ async def get_news_events_list(
             l.country_code,
             CASE
                 WHEN rn.language_id = 1 THEN rn.title_original
-                ELSE t.title
+                ELSE COALESCE(t.title, rn.title_original)
             END as news_title,
             COALESCE(rn.published_at, rn.fetched_at) as published_at,
             COALESCE(em.metrics_count, 0) as metrics_count
@@ -108,10 +104,6 @@ async def get_news_events_list(
             FROM translations tr
             WHERE tr.raw_news_id = rn.id
               AND tr.language_id = 1
-              AND (
-                  NULLIF(BTRIM(COALESCE(tr.title, '')), '') IS NOT NULL
-                  OR NULLIF(BTRIM(COALESCE(tr.content, '')), '') IS NOT NULL
-              )
             ORDER BY tr.created_at DESC NULLS LAST, tr.id DESC
             LIMIT 1
         ) t ON TRUE
@@ -161,11 +153,11 @@ async def get_news_event_detail(
             ne.event_type,
             CASE
                 WHEN rn.language_id = 1 THEN rn.title_original
-                ELSE t.title
+                ELSE COALESCE(t.title, rn.title_original)
             END as news_title,
             CASE
                 WHEN rn.language_id = 1 THEN rn.content_original
-                ELSE t.content
+                ELSE COALESCE(t.content, rn.content_original)
             END as news_content,
             COALESCE(rn.published_at, rn.fetched_at) as published_at,
             ne.created_at
@@ -176,15 +168,10 @@ async def get_news_event_detail(
             FROM translations tr
             WHERE tr.raw_news_id = rn.id
               AND tr.language_id = 1
-              AND (
-                  NULLIF(BTRIM(COALESCE(tr.title, '')), '') IS NOT NULL
-                  OR NULLIF(BTRIM(COALESCE(tr.content, '')), '') IS NOT NULL
-              )
             ORDER BY tr.created_at DESC NULLS LAST, tr.id DESC
             LIMIT 1
         ) t ON TRUE
         WHERE ne.id = $1
-        AND (rn.language_id = 1 OR t.id IS NOT NULL)
         LIMIT 1
     """
     

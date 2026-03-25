@@ -100,33 +100,30 @@ async def _get_news_batch(conn: asyncpg.Connection, batch_size: int) -> list:
         SELECT
           rn.id AS raw_news_id,
           rn.source_id,
+          rn.language_id,
           CASE
             WHEN rn.language_id = $1 THEN rn.title_original
-            ELSE t.title
+            ELSE COALESCE(t.title, rn.title_original)
           END AS title_ar,
           CASE
             WHEN rn.language_id = $1 THEN rn.content_original
-            ELSE t.content
-          END AS content_ar
+            ELSE COALESCE(t.content, rn.content_original)
+          END AS content_ar,
+          CASE
+            WHEN rn.language_id = $1 THEN FALSE
+            ELSE TRUE
+          END AS is_translated
         FROM raw_news rn
         LEFT JOIN LATERAL (
           SELECT tr.id, tr.title, tr.content
           FROM translations tr
           WHERE tr.raw_news_id = rn.id
             AND tr.language_id = $1
-            AND (
-              NULLIF(BTRIM(COALESCE(tr.title, '')), '') IS NOT NULL
-              OR NULLIF(BTRIM(COALESCE(tr.content, '')), '') IS NOT NULL
-            )
           ORDER BY tr.created_at DESC NULLS LAST, tr.id DESC
           LIMIT 1
         ) t ON TRUE
         WHERE
-          (
-            rn.language_id = $1
-            OR t.id IS NOT NULL
-          )
-          AND NOT EXISTS (
+          NOT EXISTS (
             SELECT 1 FROM news_events ne WHERE ne.raw_news_id = rn.id
           )
           AND rn.source_id NOT IN (17, 18)
@@ -138,7 +135,7 @@ async def _get_news_batch(conn: asyncpg.Connection, batch_size: int) -> list:
     )
 
 
-async def process_locations(pool: asyncpg.Pool, batch_size: int = 20) -> Dict:
+async def process_locations(pool: asyncpg.Pool, batch_size: int = 50) -> Dict:
     location_candidates = await _load_location_candidates(pool)
     if not location_candidates:
         logger.warning("Locations table is empty; extraction will not create events")
@@ -164,17 +161,23 @@ async def process_locations(pool: asyncpg.Pool, batch_size: int = 20) -> Dict:
         processed_news += 1
         raw_news_id = int(n["raw_news_id"])
         source_id = n["source_id"]
+        language_id = n["language_id"]
+        is_translated = n["is_translated"]
+        
         if source_id in _RESTRICTED_SOURCE_IDS:
             continue
+        
         text = (n["title_ar"] or "") + "\n" + (n["content_ar"] or "")
         text = preprocess_text_for_ner(text)
         found_locs = find_locations_in_text(text, location_candidates)
         if not found_locs:
             continue
+        
         locations_found += len(found_locs)
         for loc in found_locs:
             country_code = loc.get("country_code", "UNKNOWN")
             locations_by_country.setdefault(country_code, []).append(loc["name"])
+        
         try:
             async with pool.acquire() as conn:
                 for loc in found_locs:
@@ -192,6 +195,7 @@ async def process_locations(pool: asyncpg.Pool, batch_size: int = 20) -> Dict:
                     events_created += 1
         except Exception as exc:
             logger.error(f"  ✗ Error storing locations for news {raw_news_id}: {exc}", exc_info=True)
+    
     logger.info("✅ Location extraction completed:")
     logger.info(f"  • Articles processed: {processed_news}")
     logger.info(f"  • Locations detected: {locations_found}")
