@@ -28,6 +28,8 @@ async def get_news_events_list(
     """
     Get list of news events with pagination and filters
     
+    Results are always ordered by LATEST news first (published_at DESC)
+    
     - **limit**: Number of items per page (1-200)
     - **offset**: Offset for pagination
     - **country_code**: Filter by country code
@@ -80,7 +82,7 @@ async def get_news_events_list(
         {where_sql}
     """
     
-    # Get paginated list
+    # Get paginated list - ordered by latest news first
     list_query = f"""
         SELECT
             ne.id,
@@ -113,7 +115,7 @@ async def get_news_events_list(
             GROUP BY event_id
         ) em ON ne.id = em.event_id
         {where_sql}
-        ORDER BY COALESCE(rn.published_at, rn.fetched_at) DESC NULLS LAST
+        ORDER BY COALESCE(rn.published_at, rn.fetched_at) DESC NULLS LAST, ne.id DESC
         LIMIT ${param_idx} OFFSET ${param_idx + 1}
     """
     params.extend([limit, offset])

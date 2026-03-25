@@ -2,6 +2,12 @@
 ----------------------------------------------
 The service matches Arabic news articles against the curated entries in the
 `locations` table and strictly avoids restricted daytime sources.
+
+Processing Order:
+- Always processes the LATEST news articles first (ordered by published_at DESC)
+- Excludes articles from restricted sources (17, 18)
+- For foreign articles, uses translations from the translations table
+- Only processes articles that don't have events yet
 """
 
 import logging
@@ -127,7 +133,7 @@ async def _get_news_batch(conn: asyncpg.Connection, batch_size: int) -> list:
             SELECT 1 FROM news_events ne WHERE ne.raw_news_id = rn.id
           )
           AND rn.source_id NOT IN (17, 18)
-        ORDER BY COALESCE(rn.published_at, rn.fetched_at) DESC NULLS LAST
+        ORDER BY COALESCE(rn.published_at, rn.fetched_at) DESC NULLS LAST, rn.id DESC
         LIMIT $2
         """,
         ar_id,
