@@ -36,7 +36,8 @@ async def get_news_events_list(
     """
     
     # Build WHERE clause
-    where_clauses = []
+    # Only show events with Arabic translation for non-Arabic news, or original Arabic news
+    where_clauses = ["(t.id IS NOT NULL OR rn.language_id = 1)"]
     params = []
     param_idx = 1
     
@@ -63,6 +64,8 @@ async def get_news_events_list(
         SELECT COUNT(*)
         FROM news_events ne
         LEFT JOIN locations l ON ne.location_id = l.id
+        LEFT JOIN raw_news rn ON ne.raw_news_id = rn.id
+        LEFT JOIN translations t ON t.raw_news_id = rn.id AND t.language_id = 1
         LEFT JOIN (
             SELECT event_id, COUNT(*) as metrics_count
             FROM event_metrics
@@ -81,7 +84,10 @@ async def get_news_events_list(
             ne.event_type,
             l.name as location_name,
             l.country_code,
-            rn.title_original as news_title,
+            CASE 
+                WHEN rn.language_id = 1 THEN rn.title_original
+                ELSE t.title
+            END as news_title,
             rn.published_at,
             CASE
                 WHEN st.name ILIKE 'x' OR st.name ILIKE 'x%' OR st.name ILIKE '%twitter%' THEN 'X'
@@ -99,6 +105,7 @@ async def get_news_events_list(
         LEFT JOIN raw_news rn ON ne.raw_news_id = rn.id
         LEFT JOIN sources s ON rn.source_id = s.id
         LEFT JOIN source_types st ON s.source_type_id = st.id
+        LEFT JOIN translations t ON t.raw_news_id = rn.id AND t.language_id = 1
         LEFT JOIN (
             SELECT event_id, COUNT(*) as metrics_count
             FROM event_metrics
